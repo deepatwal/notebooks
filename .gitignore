@@ -1,5 +1,5 @@
 .ipynb_checkpoints
 .vscode
 env-notebooks
-env-llm
+env-langchain-llm
 env-semantic-web
