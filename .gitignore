@@ -2,3 +2,4 @@
 .vscode
 env-notebooks
 env-llm
+env-semantic-web
