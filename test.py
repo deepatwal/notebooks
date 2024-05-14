@@ -1,3 +1,3 @@
 import os
 
-os.path
+os.path.join('a', 'b')
