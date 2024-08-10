@@ -1,4 +1,5 @@
 .ipynb_checkpoints
+.mypy_cache
 .vscode
 env-notebooks
 env-langchain-llm
@@ -6,3 +7,4 @@ env-semantic-web
 env-ml-bootcamp-2022
 env-base-practice
 env-3-12-llm
+env-pytorch
