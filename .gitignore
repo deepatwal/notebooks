@@ -11,3 +11,4 @@ env-pytorch
 env-langchain-ollama
 env-nlp
 datasets
+env-ml-bootcamp
