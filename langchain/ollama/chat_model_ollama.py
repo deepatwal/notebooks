@@ -185,15 +185,15 @@ import json
 # creating a tool with custom name and json args
 # ---------------------------------------------------------------------------------
 
-class CalculatorInput(BaseModel):
-    a: int = Field(description="first number")
-    b: int = Field(description="second number")
+# class CalculatorInput(BaseModel):
+#     a: int = Field(description="first number")
+#     b: int = Field(description="second number")
 
 
-@tool("multiplication-tool", args_schema=CalculatorInput, return_direct=True)
-def multiply(a: int, b: int) -> int:
-    """Multiply two numbers."""
-    return a * b
+# @tool("multiplication-tool", args_schema=CalculatorInput, return_direct=True)
+# def multiply(a: int, b: int) -> int:
+#     """Multiply two numbers."""
+#     return a * b
 
-print(f"multiply: {multiply}")
-# print(json.dumps(multiply.args_schema.schema(), indent=4))
+# print(f"multiply: {multiply}")
+# # print(json.dumps(multiply.args_schema.schema(), indent=4))
