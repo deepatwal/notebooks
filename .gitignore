@@ -13,3 +13,5 @@ env-nlp
 datasets
 env-ml-bootcamp
 env-ollama-langchain
+note.txt
+langchain/.env
