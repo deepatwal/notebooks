@@ -68,8 +68,8 @@ def fetch_classes() -> List[str]:
     PREFIX owl: <http://www.w3.org/2002/07/owl#>
     SELECT ?class
     FROM <http://dbpedia.org/model>
-    WHERE { ?class a owl:Class .
-      FILTER(regex(STRAFTER(STR(?class), "http://dbpedia.org/ontology/"), "^[\\x00-\\x7F]+$")) }
+    WHERE { ?class a owl:Class . 
+    FILTER(regex(STRAFTER(STR(?class), "http://dbpedia.org/ontology/"), "^[\\x00-\\x7F]+$")) }
     ORDER BY ?class
     """
     try:
@@ -238,13 +238,17 @@ async def main(resume: bool = False):
     await asyncio.gather(*tasks)
 
     try:
+        fail_i = 0
         async with aiofiles.open(FAILED_INSTANCE_LOG, 'r') as f:
-            fail_i = sum(1 async for _ in f)
+            async for _ in f:
+                fail_i += 1
         logger.info(f"Failed instances: {fail_i}")
     except: pass
     try:
+        fail_c = 0
         async with aiofiles.open(FAILED_CLASS_LOG, 'r') as f:
-            fail_c = sum(1 async for _ in f)
+            async for _ in f:
+                fail_c += 1
         logger.info(f"Failed classes: {fail_c}")
     except: pass
 
