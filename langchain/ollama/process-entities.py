@@ -27,16 +27,18 @@ if not GRAPHDB_BASE_URL or not GRAPHDB_REPOSITORY:
 SPARQL_ENDPOINT = urllib.parse.urljoin(GRAPHDB_BASE_URL.rstrip('/') + '/', f"repositories/{GRAPHDB_REPOSITORY}")
 
 OUTPUT_FILENAME_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "datasets", "instance_description")
+
 OUTPUT_FILENAME = os.path.join(OUTPUT_FILENAME_DIR, "instance_description.jsonl")
 
 FAILED_LOG_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "datasets", "failed")
+
 FAILED_CLASS_LOG = os.path.join(FAILED_LOG_DIR, "failed_class_iri.txt")
 FAILED_INSTANCE_LOG = os.path.join(FAILED_LOG_DIR, "failed_instance_iri.txt")
 
 CPU_CORES = 24
-MAX_CONCURRENT_REQUESTS = 20
-MAX_CONCURRENT_CLASSES = 6  # 25% of CPU_CORES
-BATCH_SIZE = 100
+MAX_CONCURRENT_REQUESTS = 5
+MAX_CONCURRENT_CLASSES = 5
+BATCH_SIZE = 50
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -68,8 +70,8 @@ def fetch_classes() -> List[str]:
     PREFIX owl: <http://www.w3.org/2002/07/owl#>
     SELECT ?class
     FROM <http://dbpedia.org/model>
-    WHERE { ?class a owl:Class . 
-    FILTER(regex(STRAFTER(STR(?class), "http://dbpedia.org/ontology/"), "^[\\x00-\\x7F]+$")) }
+    WHERE { ?class a owl:Class .
+      FILTER(regex(STRAFTER(STR(?class), "http://dbpedia.org/ontology/"), "^[\\x00-\\x7F]+$")) }
     ORDER BY ?class
     """
     try:
@@ -124,7 +126,7 @@ def clean_value(rdf_term: Optional[str]) -> str:
         return m.group(1) if m else t
     return t
 
-def describe_instance(instance_iri: str, retries: int = 3, delay: float = 1.0) -> Optional[str]:
+async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 1.0) -> Optional[str]:
     logger.info(f"Describing instance {instance_iri}")
     query = f"DESCRIBE <{instance_iri}>"
     for attempt in range(1, retries + 1):
@@ -136,9 +138,10 @@ def describe_instance(instance_iri: str, retries: int = 3, delay: float = 1.0) -
         except Exception as e:
             logger.warning(f"[Retry {attempt}/{retries}] Error describing {instance_iri}: {e}")
             if attempt < retries:
-                time.sleep(delay * (2 ** (attempt - 1)))
+                await asyncio.sleep(delay * (2 ** (attempt - 1)))
             else:
                 logger.exception(f"[Error] Failed after {retries} retries: {instance_iri}")
+                await log_failed_instance(instance_iri)
     return None
 
 def process_n3_simplified(n3_data: str) -> str:
@@ -178,8 +181,7 @@ def process_n3_simplified(n3_data: str) -> str:
 async def process_instance_worker(instance_iri: str):
     try:
         async with request_semaphore:
-            loop = asyncio.get_running_loop()
-            data = await loop.run_in_executor(None, describe_instance, instance_iri)
+            data = await describe_instance(instance_iri)
         if data:
             desc = process_n3_simplified(data)
             rec = {"iri": instance_iri, "description": desc}
@@ -189,7 +191,7 @@ async def process_instance_worker(instance_iri: str):
             logger.debug(f"Saved: {instance_iri}")
     except Exception as e:
         logger.exception(f"[Error] Worker {instance_iri}: {e}")
-        asyncio.create_task(log_failed_instance(instance_iri))
+        await log_failed_instance(instance_iri)
 
 async def process_class_worker(owl_class: str, processed_iris: Set[str], resume: bool):
     async with class_semaphore:
@@ -243,14 +245,17 @@ async def main(resume: bool = False):
             async for _ in f:
                 fail_i += 1
         logger.info(f"Failed instances: {fail_i}")
-    except: pass
+    except:
+        pass
+
     try:
         fail_c = 0
         async with aiofiles.open(FAILED_CLASS_LOG, 'r') as f:
             async for _ in f:
                 fail_c += 1
         logger.info(f"Failed classes: {fail_c}")
-    except: pass
+    except:
+        pass
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
