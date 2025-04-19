@@ -10,6 +10,7 @@ env-3-12-llm
 env-pytorch
 env-langchain-ollama
 env-ollama-langchain-embedding
+env-ollama-langchain-embedding-pca
 env-nlp
 datasets
 env-ml-bootcamp

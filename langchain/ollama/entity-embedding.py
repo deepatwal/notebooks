@@ -95,75 +95,71 @@ def get_embedding_by_iri(iri):
         logger.error(f"Error retrieving embedding for IRI {iri}: {e}")
         return None
 
+# Function to read file line by line in chunks
+def read_lines_in_batches(filename, batch_size):
+    with open(filename, "r", encoding="utf-8") as file:
+        batch = []
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            batch.append(line)
+            if len(batch) == batch_size:
+                yield batch
+                batch = []
+        if batch:
+            yield batch
+
 # Function to process and store data in parallel with retry logic and error handling
 def process_and_store(filename, limit=None, batch_size=50, max_workers=4, max_retries=3, retry_delay=5):
     count = 0
     batch_docs = []
-
     try:
-        with open(filename, "r", encoding="utf-8") as file:
-            lines = [line.strip() for line in file if line.strip()]
+        for lines in read_lines_in_batches(filename, batch_size):
+            if limit and count >= limit:
+                break
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {}
+                for line_number, line in enumerate(lines, 1):
+                    try:
+                        record = json.loads(line)
+                        description = record.get("description", "")
+                        iri = record.get("iri")
+                        if not description or not iri:
+                            logger.warning(f"Skipping line {line_number}: missing 'iri' or 'description'")
+                            continue
 
-        if limit:
-            lines = lines[:limit]
+                        future = executor.submit(summarize_entity, description)
+                        futures[future] = (line_number, iri, description)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid JSON at line {line_number}, skipping.")
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {}
-            for line_number, line in enumerate(lines, 1):
-                try:
-                    record = json.loads(line)
-                    description = record.get("description", "")
-                    iri = record.get("iri")
-                    if not description or not iri:
-                        logger.warning(f"Skipping line {line_number}: missing 'iri' or 'description'")
-                        continue
+                for future in as_completed(futures):
+                    line_number, iri, description = futures[future]
+                    try:
+                        summary_text = future.result()
+                        full_text = f"Summary: {summary_text}\n\nOriginal: {description}"
+                        doc = Document(page_content=full_text, metadata={"_id": iri})
+                        batch_docs.append(doc)
+                        count += 1
+                    except Exception as e:
+                        logger.exception(f"Failed at line {line_number}: {e}")
 
-                    future = executor.submit(summarize_entity, description)
-                    futures[future] = (line_number, iri, description)
-                except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON at line {line_number}, skipping.")
-
-            for future in as_completed(futures):
-                line_number, iri, description = futures[future]
-                try:
-                    summary_text = future.result()
-                    full_text = f"Summary: {summary_text}\n\nOriginal: {description}"
-                    doc = Document(page_content=full_text, metadata={"_id": iri})
-                    batch_docs.append(doc)
-                    count += 1
-
-                    if len(batch_docs) >= batch_size:
-                        success = False
-                        for attempt in range(max_retries):
-                            try:
-                                vectorstore.add_documents(batch_docs)
-                                logger.info(f"Stored batch of {len(batch_docs)} embeddings.")
-                                success = True
-                                break
-                            except Exception as e:
-                                logger.warning(f"Attempt {attempt + 1} failed to store batch: {e}")
-                                time.sleep(retry_delay)
-                        if not success:
-                            logger.error("Failed to store batch after maximum retries.")
-                        batch_docs = []
-
-                except Exception as e:
-                    logger.exception(f"Failed at line {line_number}: {e}")
-
-        # Store any remaining docs
-        if batch_docs:
-            success = False
-            for attempt in range(max_retries):
-                try:
-                    vectorstore.add_documents(batch_docs)
-                    logger.info(f"Stored final batch of {len(batch_docs)} embeddings.")
-                    success = True
-                    break
-                except Exception as e:
-                    logger.warning(f"Attempt {attempt + 1} failed to store final batch: {e}")
-                    time.sleep(retry_delay)
-            if not success:
-                logger.error("Failed to store final batch after maximum retries.")
+            if batch_docs:
+                success = False
+                for attempt in range(max_retries):
+                    try:
+                        vectorstore.add_documents(batch_docs)
+                        logger.info(f"Stored batch of {len(batch_docs)} embeddings.")
+                        success = True
+                        break
+                    except Exception as e:
+                        logger.warning(f"Attempt {attempt + 1} failed to store batch: {e}")
+                        time.sleep(retry_delay)
+                if not success:
+                    logger.error("Failed to store batch after maximum retries.")
+                batch_docs = []
 
     except KeyboardInterrupt:
         logger.warning("Processing interrupted by user. Attempting to shut down gracefully.")
@@ -175,4 +171,4 @@ def process_and_store(filename, limit=None, batch_size=50, max_workers=4, max_re
                 logger.error(f"Failed to store interrupted batch: {e}")
 
 # Run with parallel processing
-process_and_store(ENTITY_DESCRIPTION_FILE, limit=100, batch_size=50, max_workers=4)
+process_and_store(ENTITY_DESCRIPTION_FILE, limit=None, batch_size=50, max_workers=6)
