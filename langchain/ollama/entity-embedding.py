@@ -75,6 +75,26 @@ def summarize_entity(description):
     response = llm.invoke(messages)
     return response.content if hasattr(response, 'content') else str(response)
 
+# Retrieve document by IRI
+def get_embedding_by_iri(iri):
+    try:
+        with psycopg.connect(CONNECTION_STRING) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, embedding, metadata
+                    FROM langchain_pg_embedding
+                    WHERE metadata->>'_id' = %s
+                    LIMIT 1
+                """, (iri,))
+                row = cur.fetchone()
+                if row:
+                    return row
+                logger.warning(f"No embedding found for IRI: {iri}")
+                return None
+    except Exception as e:
+        logger.error(f"Error retrieving embedding for IRI {iri}: {e}")
+        return None
+
 # Function to process and store data in parallel with retry logic and error handling
 def process_and_store(filename, limit=None, batch_size=50, max_workers=4, max_retries=3, retry_delay=5):
     count = 0
