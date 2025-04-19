@@ -45,6 +45,7 @@ try:
         embeddings=embedding_model,
         collection_name=COLLECTION_NAME,
         use_jsonb=True,
+        pre_delete_collection=True
     )
     logger.info("Connection to vectorstore successful.")
 except psycopg.OperationalError as e:
@@ -107,7 +108,7 @@ def process_and_store(filename, limit=None, batch_size=50, max_workers=4, max_re
                 try:
                     summary_text = future.result()
                     full_text = f"Summary: {summary_text}\n\nOriginal: {description}"
-                    doc = Document(page_content=full_text, metadata={"iri": iri})
+                    doc = Document(page_content=full_text, metadata={"_id": iri})
                     batch_docs.append(doc)
                     count += 1
 
