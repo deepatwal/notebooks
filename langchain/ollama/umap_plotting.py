@@ -25,6 +25,11 @@ DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+# Validate environment variables
+if not OUTPUT_DIR:
+    logging.error("OUTPUT_DIR is not set. Please configure it in the .env file.")
+    exit(1)
+
 # Function to extract the label or name of an entity
 def extract_entity_label(entity):
     """
@@ -54,15 +59,19 @@ def fetch_and_process_entities():
         list: A list of processed entity labels.
         np.ndarray: A NumPy array of embeddings.
     """
-    with psycopg.connect(CONNECTION_STRING) as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT document, embedding
-                FROM public.langchain_pg_embedding
-                WHERE document IS NOT NULL
-                AND collection_id = '76b3cdc3-08e6-465e-a807-31a87dc245fa'
-            """)
-            results = cur.fetchall()
+    try:
+        with psycopg.connect(CONNECTION_STRING) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT document, embedding
+                    FROM public.langchain_pg_embedding
+                    WHERE document IS NOT NULL
+                    AND collection_id = '76b3cdc3-08e6-465e-a807-31a87dc245fa'
+                """)
+                results = cur.fetchall()
+    except Exception as e:
+        logging.error(f"Database connection failed: {e}")
+        return [], None
 
     labels = []
     embeddings = []
@@ -70,7 +79,7 @@ def fetch_and_process_entities():
         if emb is not None:
             try:
                 # Create output directory if it does not exist
-                if OUTPUT_DIR and not os.path.exists(OUTPUT_DIR):
+                if not os.path.exists(OUTPUT_DIR):
                     os.makedirs(OUTPUT_DIR)
                     logging.info(f"Created output directory: {OUTPUT_DIR}")
 
@@ -92,6 +101,11 @@ def fetch_and_process_entities():
             except (ValueError, SyntaxError) as e:
                 logging.error(f"Error processing document or embedding: {e}")
                 logging.error(f"Problematic document: {document}")
+
+    # Ensure embeddings have consistent dimensions
+    if len(set(len(emb) for emb in embeddings)) > 1:
+        logging.error("Embeddings have inconsistent dimensions.")
+        return [], None
 
     return labels, np.stack(embeddings) if embeddings else None
 
@@ -118,9 +132,6 @@ def parse_document(document):
                 parsed_data["label"] = line.split("label:")[1].strip()
             elif line.startswith("name:"):
                 parsed_data["name"] = line.split("name:")[1].strip()
-            elif line.startswith("type:"):
-                # Extract and split the type values into a list
-                parsed_data["type"] = [t.strip() for t in line.split("type:")[1].split(",")]
 
         return parsed_data
     except Exception as e:
@@ -145,17 +156,14 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="
     embedding_3d = reducer.fit_transform(embeddings)
 
     # Save reduced embeddings for reuse
-    if OUTPUT_DIR:
-        reduced_embeddings_path = os.path.join(OUTPUT_DIR, f"reduced_embeddings_n{n_neighbors}_{datetime.now().strftime('%Y-%m-%d')}.npy")
-        np.save(reduced_embeddings_path, embedding_3d)
-        logging.info(f"Reduced embeddings saved to {reduced_embeddings_path}")
+    reduced_embeddings_path = os.path.join(OUTPUT_DIR, f"reduced_embeddings_n{n_neighbors}_{datetime.now().strftime('%Y-%m-%d')}.npy")
+    np.save(reduced_embeddings_path, embedding_3d)
+    logging.info(f"Reduced embeddings saved to {reduced_embeddings_path}")
 
     # Create a DataFrame for plotting with Plotly
     df = pd.DataFrame(embedding_3d, columns=["x", "y", "z"])
     if labels:
-        df['label'] = labels
-    # Add n_neighbors as a column for coloring
-    df['n_neighbors'] = n_neighbors
+        df['label'] = labels  # Group entities by their labels
 
     # Create an interactive 3D scatter plot with Plotly
     logging.info("Creating 3D scatter plot...")
@@ -164,10 +172,10 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="
         x="x",
         y="y",
         z="z",
-        color="n_neighbors",  # Use n_neighbors for color
+        color="label" if labels else None,  # Use labels for color grouping
         hover_data=["label"] if labels else None,
-        title="3D UMAP Projection of Entity Embeddings",
-        labels={"label": "Entity Detail", "n_neighbors": "Neighbors"}
+        title=f"3D UMAP Projection (n_neighbors={n_neighbors}, min_dist={min_dist})",
+        labels={"label": "Entity Group"}
     )
     
     # Update layout for better visuals
@@ -182,12 +190,7 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="
     )
 
     # Save the plot as an HTML file
-    if not OUTPUT_DIR or not os.path.exists(OUTPUT_DIR):
-        logging.error(f"The output directory '{OUTPUT_DIR}' does not exist. Please create it or update the .env file.")
-        return
-
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    plot_path = f"{OUTPUT_DIR}/3d_umap_projection_n{n_neighbors}_{current_date}.html"
+    plot_path = f"{OUTPUT_DIR}/3d_umap_projection_{datetime.now().strftime('%Y-%m-%d')}.html"
     fig.write_html(plot_path)
     logging.info(f"3D UMAP plot saved to {plot_path}")
 
