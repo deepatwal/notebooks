@@ -1,7 +1,7 @@
 import os
 import ast
 import logging
-from typing import Optional, cast
+from typing import Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -31,7 +31,11 @@ if not OUTPUT_DIR:
     logging.error("OUTPUT_DIR is not set. Please configure it in the .env file.")
     exit(1)
 
-OUTPUT_DIR = cast(str, OUTPUT_DIR)  # Tell mypy it’s definitely a str
+if None in (DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME):
+    logging.error("Database credentials are missing. Please set them properly in the .env file.")
+    exit(1)
+
+OUTPUT_DIR = cast(str, OUTPUT_DIR)  # Tell mypy it's definitely a str
 
 # PostgreSQL connection string
 CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
@@ -65,7 +69,7 @@ def parse_document(document: str) -> dict:
         logging.error(f"Problematic document: {document}")
         return {}
 
-def fetch_and_process_entities() -> tuple[list[str], Optional[np.ndarray]]:
+def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray]]:
     try:
         with psycopg.connect(CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
@@ -83,7 +87,6 @@ def fetch_and_process_entities() -> tuple[list[str], Optional[np.ndarray]]:
     labels = []
     embeddings = []
 
-    # Ensure output directory exists
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     for document, emb in results:
@@ -106,7 +109,7 @@ def fetch_and_process_entities() -> tuple[list[str], Optional[np.ndarray]]:
         return [], None
 
     if len(set(len(e) for e in embeddings)) > 1:
-        logging.error("Embeddings have inconsistent dimensions.")
+        logging.error(f"Embeddings dimensions mismatch: {[len(e) for e in embeddings]}")
         return [], None
 
     return labels, np.stack(embeddings)
@@ -117,7 +120,7 @@ def plot_umap_3d(
     n_neighbors: int = 15,
     min_dist: float = 0.1,
     metric: str = "euclidean",
-    densmap: bool = False
+    densmap: bool = True
 ) -> None:
     if embeddings is None or len(embeddings) == 0:
         logging.error("No valid embeddings provided.")
