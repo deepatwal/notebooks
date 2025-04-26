@@ -52,6 +52,7 @@ def fetch_and_process_entities():
 
     Returns:
         list: A list of processed entity labels.
+        list: A list of entity types.
         np.ndarray: A NumPy array of embeddings.
     """
     with psycopg.connect(CONNECTION_STRING) as conn:
@@ -65,33 +66,53 @@ def fetch_and_process_entities():
             results = cur.fetchall()
 
     labels = []
+    types = []
     embeddings = []
     for document, emb in results:
         if emb is not None:
             try:
-                # Convert the string representation of the list into an actual list/array
-                emb_list = ast.literal_eval(emb)
+                # Create output directory if it does not exist
+                if OUTPUT_DIR and not os.path.exists(OUTPUT_DIR):
+                    os.makedirs(OUTPUT_DIR)
+                    logging.info(f"Created output directory: {OUTPUT_DIR}")
+
+                # Validate embedding deserialization
+                try:
+                    emb_list = ast.literal_eval(emb)
+                    if not isinstance(emb_list, list):
+                        raise ValueError("Embedding is not a valid list.")
+                except Exception as e:
+                    logging.error(f"Error deserializing embedding: {e}")
+                    continue
+
                 embeddings.append(np.array(emb_list, dtype=np.float32))
 
                 # Process the document to extract the label or name
                 entity = parse_document(document)
                 label = extract_entity_label(entity)
                 labels.append(label)
-            except (ValueError, SyntaxError) as e:
-                print(f"Error processing document or embedding: {e}")
-                print(f"Problematic document: {document}")
 
-    return labels, np.stack(embeddings) if embeddings else None
+                # Extract the first type (or join multiple types if needed)
+                entity_type = ", ".join(entity.get("type", [])) if entity else f"Group_{np.random.randint(1000, 99999999)}"
+                # Log when assigning random group IDs
+                if not entity:
+                    logging.warning(f"Assigned random group ID: {entity_type}")
+                types.append(entity_type)
+            except (ValueError, SyntaxError) as e:
+                logging.error(f"Error processing document or embedding: {e}")
+                logging.error(f"Problematic document: {document}")
+
+    return labels, types, np.stack(embeddings) if embeddings else None
 
 def parse_document(document):
     """
-    Custom parser to extract key-value pairs for IRI, label, and name from the document string.
+    Custom parser to extract key-value pairs for IRI, label, name, and type from the document string.
 
     Args:
         document (str): The document string to parse.
 
     Returns:
-        dict: A dictionary containing the extracted keys and values for IRI, label, and name.
+        dict: A dictionary containing the extracted keys and values for IRI, label, name, and type.
     """
     parsed_data = {}
     try:
@@ -106,15 +127,18 @@ def parse_document(document):
                 parsed_data["label"] = line.split("label:")[1].strip()
             elif line.startswith("name:"):
                 parsed_data["name"] = line.split("name:")[1].strip()
-        
+            elif line.startswith("type:"):
+                # Extract and split the type values into a list
+                parsed_data["type"] = [t.strip() for t in line.split("type:")[1].split(",")]
+
         return parsed_data
     except Exception as e:
-        print(f"Error parsing document: {e}")
-        print(f"Problematic document: {document}")
+        logging.error(f"Error parsing document: {e}")
+        logging.error(f"Problematic document: {document}")
         return None
 
 # Function to perform UMAP dimensionality reduction and plot 3D visualization using Plotly
-def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="euclidean"):
+def plot_umap_3d(embeddings, labels=None, types=None, n_neighbors=15, min_dist=0.1, metric="euclidean"):
     if embeddings is None or len(embeddings) == 0:
         logging.error("No valid embeddings found.")
         return
@@ -139,12 +163,21 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="
     df = pd.DataFrame(embedding_3d, columns=["x", "y", "z"])
     if labels:
         df['label'] = labels
+    if types:
+        df['type'] = types
 
     # Create an interactive 3D scatter plot with Plotly
     logging.info("Creating 3D scatter plot...")
-    fig = px.scatter_3d(df, x="x", y="y", z="z", hover_data=["label"] if labels else None,
-                        title="3D UMAP Projection of Entity Embeddings",
-                        labels={"label": "Entity Detail"})
+    fig = px.scatter_3d(
+        df,
+        x="x",
+        y="y",
+        z="z",
+        color="type" if types else None,  # Add color based on types
+        hover_data=["label", "type"] if labels and types else None,
+        title="3D UMAP Projection of Entity Embeddings",
+        labels={"type": "Entity Type", "label": "Entity Detail"}
+    )
     
     # Update layout for better visuals
     fig.update_layout(
@@ -170,13 +203,9 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="
     # Show the plot
     fig.show()
 
-# Ensure the output directory exists
-if OUTPUT_DIR and not os.path.exists(OUTPUT_DIR):
-    os.makedirs(OUTPUT_DIR)
-
 # Fetch and process entities, then plot the UMAP visualization
-labels, embeddings = fetch_and_process_entities()
+labels, types, embeddings = fetch_and_process_entities()
 if embeddings is not None:
-    plot_umap_3d(embeddings, labels=labels, n_neighbors=15, min_dist=0.1, metric="cosine")
+    plot_umap_3d(embeddings, labels=labels, types=types, n_neighbors=15, min_dist=0.1, metric="cosine")
 else:
     logging.warning("No embeddings to visualize.")
