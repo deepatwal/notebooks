@@ -6,6 +6,7 @@ import ast
 import plotly.express as px
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -46,7 +47,7 @@ def fetch_embeddings():
 
 
 # Function to perform UMAP dimensionality reduction and plot 3D visualization using Plotly
-def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
+def plot_umap_3d(embeddings, labels=None, n_neighbors=15, output_dir=None):
     if embeddings is None or len(embeddings) == 0:
         print("No valid embeddings found.")
         return
@@ -76,12 +77,22 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
         hoverlabel=dict(bgcolor="white", font_size=13, font_family="Rockwell")
     )
 
+    # Save the plot as an HTML file in the specified directory with n_neighbors and the current date in the name
+
+    current_date = datetime.now().strftime("%Y-%m-%d")
+
+    fig.write_html(f"{output_dir}/3d_umap_projection_n{n_neighbors}_{current_date}.html")
+
     # Show the plot
     fig.show()
 
 
+output_dir = "c:/Users/deepa/data/workspace/notebooks/datasets/umap"
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
 iris, embeddings = fetch_embeddings()
 if embeddings is not None:
-    plot_umap_3d(embeddings, labels=iris, n_neighbors=15)
+    plot_umap_3d(embeddings, labels=iris, n_neighbors=15, output_dir=output_dir)
 else:
     print("No embeddings to visualize.")
