@@ -46,13 +46,13 @@ def fetch_embeddings():
 
 
 # Function to perform UMAP dimensionality reduction and plot 3D visualization using Plotly
-def plot_umap_3d(embeddings, labels=None):
+def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
     if embeddings is None or len(embeddings) == 0:
         print("No valid embeddings found.")
         return
 
     # Use UMAP for dimensionality reduction
-    reducer = umap.UMAP(n_components=3, n_neighbors=15, min_dist=0.1, random_state=42)
+    reducer = umap.UMAP(n_components=3, n_neighbors=n_neighbors, min_dist=0.1, random_state=42)
     embedding_3d = reducer.fit_transform(embeddings)
 
     # Create a DataFrame for plotting with Plotly
@@ -82,6 +82,6 @@ def plot_umap_3d(embeddings, labels=None):
 
 iris, embeddings = fetch_embeddings()
 if embeddings is not None:
-    plot_umap_3d(embeddings, labels=iris)
+    plot_umap_3d(embeddings, labels=iris, n_neighbors=15)
 else:
     print("No embeddings to visualize.")
