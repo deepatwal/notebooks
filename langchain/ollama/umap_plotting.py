@@ -7,6 +7,11 @@ import plotly.express as px
 import os
 from dotenv import load_dotenv
 from datetime import datetime
+from sklearn.preprocessing import StandardScaler
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Load environment variables
 load_dotenv()
@@ -109,14 +114,26 @@ def parse_document(document):
         return None
 
 # Function to perform UMAP dimensionality reduction and plot 3D visualization using Plotly
-def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
+def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="euclidean"):
     if embeddings is None or len(embeddings) == 0:
-        print("No valid embeddings found.")
+        logging.error("No valid embeddings found.")
         return
 
+    # Standardize embeddings
+    logging.info("Standardizing embeddings...")
+    scaler = StandardScaler()
+    embeddings = scaler.fit_transform(embeddings)
+
     # Use UMAP for dimensionality reduction
-    reducer = umap.UMAP(n_components=3, n_neighbors=n_neighbors, min_dist=0.1, random_state=42)
+    logging.info(f"Applying UMAP with n_neighbors={n_neighbors}, min_dist={min_dist}, metric={metric}...")
+    reducer = umap.UMAP(n_components=3, n_neighbors=n_neighbors, min_dist=min_dist, metric=metric, random_state=42)
     embedding_3d = reducer.fit_transform(embeddings)
+
+    # Save reduced embeddings for reuse
+    if OUTPUT_DIR:
+        reduced_embeddings_path = os.path.join(OUTPUT_DIR, f"reduced_embeddings_n{n_neighbors}_{datetime.now().strftime('%Y-%m-%d')}.npy")
+        np.save(reduced_embeddings_path, embedding_3d)
+        logging.info(f"Reduced embeddings saved to {reduced_embeddings_path}")
 
     # Create a DataFrame for plotting with Plotly
     df = pd.DataFrame(embedding_3d, columns=["x", "y", "z"])
@@ -124,7 +141,8 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
         df['label'] = labels
 
     # Create an interactive 3D scatter plot with Plotly
-    fig = px.scatter_3d(df, x="x", y="y", z="z", hover_data=["label"],
+    logging.info("Creating 3D scatter plot...")
+    fig = px.scatter_3d(df, x="x", y="y", z="z", hover_data=["label"] if labels else None,
                         title="3D UMAP Projection of Entity Embeddings",
                         labels={"label": "Entity Detail"})
     
@@ -139,13 +157,15 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
         hoverlabel=dict(bgcolor="white", font_size=13, font_family="Rockwell")
     )
 
-    # Save the plot as an HTML file in the specified directory with n_neighbors and the current date in the name
+    # Save the plot as an HTML file
     if not OUTPUT_DIR or not os.path.exists(OUTPUT_DIR):
-        print(f"Error: The output directory '{OUTPUT_DIR}' does not exist. Please create it or update the .env file.")
+        logging.error(f"The output directory '{OUTPUT_DIR}' does not exist. Please create it or update the .env file.")
         return
 
     current_date = datetime.now().strftime("%Y-%m-%d")
-    fig.write_html(f"{OUTPUT_DIR}/3d_umap_projection_n{n_neighbors}_{current_date}.html")
+    plot_path = f"{OUTPUT_DIR}/3d_umap_projection_n{n_neighbors}_{current_date}.html"
+    fig.write_html(plot_path)
+    logging.info(f"3D UMAP plot saved to {plot_path}")
 
     # Show the plot
     fig.show()
@@ -157,6 +177,6 @@ if OUTPUT_DIR and not os.path.exists(OUTPUT_DIR):
 # Fetch and process entities, then plot the UMAP visualization
 labels, embeddings = fetch_and_process_entities()
 if embeddings is not None:
-    plot_umap_3d(embeddings, labels=labels, n_neighbors=15)
+    plot_umap_3d(embeddings, labels=labels, n_neighbors=15, min_dist=0.1, metric="cosine")
 else:
-    print("No embeddings to visualize.")
+    logging.warning("No embeddings to visualize.")
