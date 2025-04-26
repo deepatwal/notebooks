@@ -8,7 +8,7 @@ import pandas as pd
 import psycopg
 import umap
 import plotly.express as px
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import normalize
 from sklearn.decomposition import PCA
 from dotenv import load_dotenv
 from datetime import datetime
@@ -126,16 +126,14 @@ def plot_umap_3d(
         logging.error("No valid embeddings provided.")
         return
 
-    # Standardize
-    logging.info("Standardizing embeddings...")
-    scaler = StandardScaler()
-    embeddings = scaler.fit_transform(embeddings)
+    # Normalize
+    logging.info("Normalizing embeddings to unit vectors...")
+    embeddings = normalize(embeddings)
 
-    # Apply PCA if too many dimensions
-    if embeddings.shape[1] > 300:
-        logging.info(f"Embedding dimension {embeddings.shape[1]} > 300, applying PCA to 100 components...")
-        pca = PCA(n_components=100, random_state=42)
-        embeddings = pca.fit_transform(embeddings)
+    # Apply PCA to reduce dimensionality from 1024 to 50 for faster processing
+    logging.info(f"Applying PCA to reduce from {embeddings.shape[1]} dimensions to 50...")
+    pca = PCA(n_components=50, random_state=42)
+    embeddings = pca.fit_transform(embeddings)
 
     # Apply UMAP
     logging.info(f"Applying UMAP (n_neighbors={n_neighbors}, min_dist={min_dist}, densmap={densmap})...")
@@ -146,7 +144,8 @@ def plot_umap_3d(
         metric=metric,
         random_state=42,
         n_jobs=-1,
-        densmap=densmap
+        densmap=densmap,
+        low_memory=True  # This option can help improve speed
     )
     embedding_3d = reducer.fit_transform(embeddings)
 
