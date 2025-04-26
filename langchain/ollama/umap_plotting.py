@@ -69,13 +69,44 @@ def fetch_and_process_entities():
                 embeddings.append(np.array(emb_list, dtype=np.float32))
 
                 # Process the document to extract the label or name
-                entity = ast.literal_eval(document)
+                entity = parse_document(document)
                 label = extract_entity_label(entity)
                 labels.append(label)
             except (ValueError, SyntaxError) as e:
                 print(f"Error processing document or embedding: {e}")
+                print(f"Problematic document: {document}")
 
     return labels, np.stack(embeddings) if embeddings else None
+
+def parse_document(document):
+    """
+    Custom parser to extract key-value pairs for IRI, label, and name from the document string.
+
+    Args:
+        document (str): The document string to parse.
+
+    Returns:
+        dict: A dictionary containing the extracted keys and values for IRI, label, and name.
+    """
+    parsed_data = {}
+    try:
+        # Split the document into lines
+        lines = document.split("\n")
+        
+        # Iterate through each line to find keys and values
+        for line in lines:
+            if line.startswith("IRI:"):
+                parsed_data["IRI"] = line.split("IRI:")[1].strip()
+            elif line.startswith("label:"):
+                parsed_data["label"] = line.split("label:")[1].strip()
+            elif line.startswith("name:"):
+                parsed_data["name"] = line.split("name:")[1].strip()
+        
+        return parsed_data
+    except Exception as e:
+        print(f"Error parsing document: {e}")
+        print(f"Problematic document: {document}")
+        return None
 
 # Function to perform UMAP dimensionality reduction and plot 3D visualization using Plotly
 def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
