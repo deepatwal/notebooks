@@ -35,7 +35,8 @@ if None in (DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME):
     logging.error("Database credentials are missing. Please set them properly in the .env file.")
     exit(1)
 
-OUTPUT_DIR = cast(str, OUTPUT_DIR)  # Tell mypy it's definitely a str
+OUTPUT_DIR = cast(str, OUTPUT_DIR)
+os.makedirs(OUTPUT_DIR, exist_ok=True)  # Ensure the output directory exists
 
 # PostgreSQL connection string
 CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
@@ -86,8 +87,6 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray]]:
 
     labels = []
     embeddings = []
-
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     for document, emb in results:
         if emb is None:
