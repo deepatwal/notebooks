@@ -154,6 +154,8 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="
     df = pd.DataFrame(embedding_3d, columns=["x", "y", "z"])
     if labels:
         df['label'] = labels
+    # Add n_neighbors as a column for coloring
+    df['n_neighbors'] = n_neighbors
 
     # Create an interactive 3D scatter plot with Plotly
     logging.info("Creating 3D scatter plot...")
@@ -162,9 +164,10 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="
         x="x",
         y="y",
         z="z",
+        color="n_neighbors",  # Use n_neighbors for color
         hover_data=["label"] if labels else None,
         title="3D UMAP Projection of Entity Embeddings",
-        labels={"label": "Entity Detail"}
+        labels={"label": "Entity Detail", "n_neighbors": "Neighbors"}
     )
     
     # Update layout for better visuals
