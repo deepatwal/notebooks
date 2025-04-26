@@ -190,7 +190,7 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="
     )
 
     # Save the plot as an HTML file
-    plot_path = f"{OUTPUT_DIR}/3d_umap_projection_{datetime.now().strftime('%Y-%m-%d')}.html"
+    plot_path = f"{OUTPUT_DIR}/3d_umap_projection_{n_neighbors}_{datetime.now().strftime('%Y-%m-%d')}.html"
     fig.write_html(plot_path)
     logging.info(f"3D UMAP plot saved to {plot_path}")
 
