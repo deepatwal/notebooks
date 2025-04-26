@@ -131,7 +131,7 @@ def plot_umap_3d(
 
     # Apply PCA to reduce dimensionality from 1024 to 50 for faster processing
     logging.info(f"Applying PCA to reduce from {embeddings.shape[1]} dimensions to 50...")
-    pca = PCA(n_components=50, random_state=42)
+    pca = PCA(n_components=50, random_state=42, n_jobs=-1)
     embeddings = pca.fit_transform(embeddings)
 
     # Apply UMAP
