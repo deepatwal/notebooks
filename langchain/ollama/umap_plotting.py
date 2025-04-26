@@ -12,6 +12,8 @@ from datetime import datetime
 load_dotenv()
 
 # PostgreSQL connection string
+
+OUTPUT_DIR = os.getenv("OUTPUT_DIR")
 DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT")
 DB_NAME = os.getenv("DB_NAME")
@@ -47,7 +49,7 @@ def fetch_embeddings():
 
 
 # Function to perform UMAP dimensionality reduction and plot 3D visualization using Plotly
-def plot_umap_3d(embeddings, labels=None, n_neighbors=15, output_dir=None):
+def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
     if embeddings is None or len(embeddings) == 0:
         print("No valid embeddings found.")
         return
@@ -81,18 +83,18 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15, output_dir=None):
 
     current_date = datetime.now().strftime("%Y-%m-%d")
 
-    fig.write_html(f"{output_dir}/3d_umap_projection_n{n_neighbors}_{current_date}.html")
+    fig.write_html(f"{OUTPUT_DIR}/3d_umap_projection_n{n_neighbors}_{current_date}.html")
 
     # Show the plot
     fig.show()
 
 
-output_dir = "c:/Users/deepa/data/workspace/notebooks/datasets/umap"
-if not os.path.exists(output_dir):
-    os.makedirs(output_dir)
+
+if OUTPUT_DIR and not os.path.exists(OUTPUT_DIR):
+    os.makedirs(OUTPUT_DIR)
 
 iris, embeddings = fetch_embeddings()
 if embeddings is not None:
-    plot_umap_3d(embeddings, labels=iris, n_neighbors=15, output_dir=output_dir)
+    plot_umap_3d(embeddings, labels=iris, n_neighbors=15)
 else:
     print("No embeddings to visualize.")
