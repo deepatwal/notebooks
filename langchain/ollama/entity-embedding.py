@@ -1,11 +1,15 @@
 import os
 import json
 import logging
+import sqlite3
 import psycopg
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import asyncio
+import aiosqlite
 
+from contextlib import closing
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_postgres.vectorstores import PGVector
 from langchain_core.documents import Document
@@ -22,20 +26,19 @@ load_dotenv()
 embedding_model = OllamaEmbeddings(model="bge-m3:567m")
 llm = ChatOllama(model="llama3.2:3b")
 
-# Path to your JSONL file
-ENTITY_DESCRIPTION_FILE = os.path.join(
-    "c:/Users/deepa/data/workspace/notebooks",
-    "datasets", "instance_description", "instance_description-05.jsonl"
-)
-
-# Database connection
+# Database connection for PGVector
 DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT")
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 CONNECTION_STRING = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-COLLECTION_NAME = "dbpedia_docs"
+COLLECTION_NAME = "dbpedia_docs_23-04-2025"
+
+# Local file and SQLite DB path setup
+OUTPUT_FILENAME_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "langchain", "ollama")
+DB_PATH = os.path.join(OUTPUT_FILENAME_DIR, "cache.db")
+SQLITE_DB_PATH = DB_PATH
 
 # Connect to PGVector
 logger.info(f"Connecting to PGVector collection '{COLLECTION_NAME}'...")
@@ -69,106 +72,225 @@ summary_prompt = ChatPromptTemplate.from_messages([
     ("human", "Please summarize the following entity details:\n\n{content}")
 ])
 
-# Summary generation function
-def summarize_entity(description):
+# Async summary generation function
+async def summarize_entity_async(description):
     messages = summary_prompt.invoke({"content": description})
-    response = llm.invoke(messages)
+    response = await llm.ainvoke(messages) 
     return response.content if hasattr(response, 'content') else str(response)
 
-# Retrieve document by IRI
-def get_embedding_by_iri(iri):
+# Fetch rows from SQLite in batches with context manager
+async def fetch_rows_from_sqlite_in_batches(batch_size=5, last_seen_id=0):
     try:
-        with psycopg.connect(CONNECTION_STRING) as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT id, embedding, metadata
-                    FROM langchain_pg_embedding
-                    WHERE metadata->>'_id' = %s
-                    LIMIT 1
-                """, (iri,))
-                row = cur.fetchone()
-                if row:
-                    return row
-                logger.warning(f"No embedding found for IRI: {iri}")
-                return None
+        async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute("SELECT id, iri, data FROM iri_cache WHERE id > ? ORDER BY id LIMIT ?", (last_seen_id, batch_size)) as cur:
+                rows = [dict(row) async for row in cur]
+        return rows
     except Exception as e:
-        logger.error(f"Error retrieving embedding for IRI {iri}: {e}")
+        logger.error(f"Failed to fetch rows from SQLite: {e}")
+        return []
+
+# Helper function for retry logic
+def retry_operation(operation, max_retries=3, retry_delay=5, *args, **kwargs):
+    for attempt in range(max_retries):
+        try:
+            return operation(*args, **kwargs)
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} failed: {e}")
+            time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+    logger.error("Operation failed after maximum retries.")
+    return None
+
+# Function to log failed IRIs to the database
+async def log_failed_iri(iri, error_message):
+    try:
+        async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
+            await conn.execute(
+                "INSERT INTO failed_iris (iri, error_message) VALUES (?, ?)",
+                (iri, error_message)
+            )
+            await conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to log failed IRI {iri}: {e}")
+
+# Function to log processed IRIs to the database
+async def log_processed_iri(iri):
+    try:
+        async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
+            await conn.execute(
+                "INSERT OR IGNORE INTO processed_iris (iri) VALUES (?)",
+                (iri,)
+            )
+            await conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to log processed IRI {iri}: {e}")
+
+# Function to save the last processed ID to SQLite
+async def save_last_processed_id_to_db(last_seen_id):
+    try:
+        async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
+            await conn.execute(
+                "INSERT INTO checkpoint (last_seen_id) VALUES (?)",
+                (last_seen_id,)
+            )
+            await conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to save last processed ID to SQLite: {e}")
+
+# Function to load the last processed ID from SQLite
+async def load_last_processed_id_from_db():
+    try:
+        async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
+            async with conn.execute("SELECT last_seen_id FROM checkpoint ORDER BY id DESC LIMIT 1") as cur:
+                result = await cur.fetchone()
+                return result[0] if result else 0
+    except Exception as e:
+        logger.error(f"Failed to load last processed ID from SQLite: {e}")
+        return 0
+
+# Updated process_from_sqlite to use asyncio.run with summarize_entity_async
+async def process_from_sqlite(batch_size=5, max_workers=5, max_retries=3, retry_delay=5, limit=None, log_interval=100):
+    count = 0
+    last_seen_id = await load_last_processed_id_from_db()  # Load the last processed ID from SQLite
+
+    while True:
+        batch_rows = await fetch_rows_from_sqlite_in_batches(batch_size=batch_size, last_seen_id=last_seen_id)
+        if not batch_rows:
+            break
+        if limit and count >= limit:
+            break
+
+        batch_docs = []
+        tasks = []
+        iri_descriptions = []
+
+        for row in batch_rows:
+            iri = row["iri"]
+            try:
+                data_json = json.loads(row["data"])
+                description = data_json.get("description", "")
+                if not description or not iri:
+                    logger.warning(f"Skipping row with IRI {iri}: missing 'iri' or 'description'")
+                    continue
+
+                tasks.append(summarize_entity_async(description))
+                iri_descriptions.append((iri, description))
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON in row with IRI {iri}, skipping.")
+            except Exception as e:
+                logger.warning(f"Failed to prepare row with IRI {iri}: {e}")
+
+        summaries = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for (iri, description), summary in zip(iri_descriptions, summaries):
+            if isinstance(summary, Exception) or summary is None:
+                logger.exception(f"Summarization failed for IRI {iri}: {summary}")
+                continue
+
+            full_text = f"{summary}\n\n{description}"
+            doc = Document(page_content=full_text, metadata={"_id": iri})
+            batch_docs.append(doc)
+            count += 1
+
+        if batch_docs:
+            success = False
+            for attempt in range(max_retries):
+                try:
+                    vectorstore.add_documents(batch_docs)
+                    logger.info(f"Stored batch of {len(batch_docs)} embeddings.")
+                    success = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} failed to store batch: {e}")
+                    await asyncio.sleep(retry_delay)
+            if not success:
+                logger.error("Failed to store batch after maximum retries.")
+
+        # Update the last_seen_id to the last record in the current batch
+        last_seen_id = batch_rows[-1]["id"]
+
+        # Log progress
+        logger.info(f"Processed {count} records so far...")
+        if limit:
+            logger.info(f"Progress: {count}/{limit} records completed.")
+
+# Async process rows from SQLite DB
+async def process_from_sqlite_async(batch_size=1000, max_retries=3, retry_delay=5, limit=None):
+    count = 0
+    last_seen_id = 0
+    semaphore = asyncio.Semaphore(100)  # Limit concurrency to 100 tasks
+
+    async def summarize_entity_with_retries(description, retries=3, delay=2):
+        for attempt in range(retries):
+            try:
+                async with semaphore:
+                    return await summarize_entity_async(description)
+            except Exception as e:
+                logger.warning(f"Retry {attempt + 1} failed for summarization: {e}")
+                await asyncio.sleep(delay * (2 ** attempt))  # Exponential backoff
+        logger.error(f"Failed to summarize after {retries} retries.")
         return None
 
-# Function to read file line by line in chunks
-def read_lines_in_batches(filename, batch_size):
-    with open(filename, "r", encoding="utf-8") as file:
-        batch = []
-        for line in file:
-            line = line.strip()
-            if not line:
-                continue
-            batch.append(line)
-            if len(batch) == batch_size:
-                yield batch
-                batch = []
-        if batch:
-            yield batch
+    while True:
+        batch_rows = await fetch_rows_from_sqlite_in_batches(batch_size=batch_size, last_seen_id=last_seen_id)
+        if not batch_rows:
+            break
+        if limit and count >= limit:
+            break
 
-# Function to process and store data in parallel with retry logic and error handling
-def process_and_store(filename, limit=None, batch_size=50, max_workers=4, max_retries=3, retry_delay=5):
-    count = 0
-    batch_docs = []
-    try:
-        for lines in read_lines_in_batches(filename, batch_size):
-            if limit and count >= limit:
-                break
-            
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {}
-                for line_number, line in enumerate(lines, 1):
-                    try:
-                        record = json.loads(line)
-                        description = record.get("description", "")
-                        iri = record.get("iri")
-                        if not description or not iri:
-                            logger.warning(f"Skipping line {line_number}: missing 'iri' or 'description'")
-                            continue
+        batch_docs = []
+        tasks = []
+        iri_descriptions = []
 
-                        future = executor.submit(summarize_entity, description)
-                        futures[future] = (line_number, iri, description)
-                    except json.JSONDecodeError:
-                        logger.warning(f"Invalid JSON at line {line_number}, skipping.")
-
-                for future in as_completed(futures):
-                    line_number, iri, description = futures[future]
-                    try:
-                        summary_text = future.result()
-                        full_text = f"Summary: {summary_text}\n\nOriginal: {description}"
-                        doc = Document(page_content=full_text, metadata={"_id": iri})
-                        batch_docs.append(doc)
-                        count += 1
-                    except Exception as e:
-                        logger.exception(f"Failed at line {line_number}: {e}")
-
-            if batch_docs:
-                success = False
-                for attempt in range(max_retries):
-                    try:
-                        vectorstore.add_documents(batch_docs)
-                        logger.info(f"Stored batch of {len(batch_docs)} embeddings.")
-                        success = True
-                        break
-                    except Exception as e:
-                        logger.warning(f"Attempt {attempt + 1} failed to store batch: {e}")
-                        time.sleep(retry_delay)
-                if not success:
-                    logger.error("Failed to store batch after maximum retries.")
-                batch_docs = []
-
-    except KeyboardInterrupt:
-        logger.warning("Processing interrupted by user. Attempting to shut down gracefully.")
-        if batch_docs:
+        for row in batch_rows:
+            iri = row["iri"]
             try:
-                vectorstore.add_documents(batch_docs)
-                logger.info(f"Stored interrupted batch of {len(batch_docs)} embeddings.")
-            except Exception as e:
-                logger.error(f"Failed to store interrupted batch: {e}")
+                data_json = json.loads(row["data"])
+                description = data_json.get("description", "")
+                if not description or not iri:
+                    logger.warning(f"Skipping row with IRI {iri}: missing 'iri' or 'description'")
+                    continue
 
-# Run with parallel processing
-process_and_store(ENTITY_DESCRIPTION_FILE, limit=None, batch_size=50, max_workers=6)
+                tasks.append(summarize_entity_with_retries(description))
+                iri_descriptions.append((iri, description))
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON in row with IRI {iri}, skipping.")
+            except Exception as e:
+                logger.warning(f"Failed to prepare row with IRI {iri}: {e}")
+
+        summaries = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for (iri, description), summary in zip(iri_descriptions, summaries):
+            if isinstance(summary, Exception) or summary is None:
+                logger.exception(f"Summarization failed for IRI {iri}: {summary}")
+                continue
+
+            full_text = f"Summary: {summary}\n\nOriginal: {description}"
+            doc = Document(page_content=full_text, metadata={"_id": iri})
+            batch_docs.append(doc)
+            count += 1
+
+        if batch_docs:
+            success = False
+            for attempt in range(max_retries):
+                try:
+                    vectorstore.add_documents(batch_docs)
+                    logger.info(f"Stored batch of {len(batch_docs)} embeddings.")
+                    success = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} failed to store batch: {e}")
+                    await asyncio.sleep(retry_delay)
+            if not success:
+                logger.error("Failed to store batch after maximum retries.")
+
+        # Update the last_seen_id to the last record in the current batch
+        last_seen_id = batch_rows[-1]["id"]
+
+        # Log progress
+        logger.info(f"Processed {count} records so far...")
+        if limit:
+            logger.info(f"Progress: {count}/{limit} records completed.")
+
+# Retain only the asynchronous function call
+asyncio.run(process_from_sqlite(batch_size=5000, limit=None))

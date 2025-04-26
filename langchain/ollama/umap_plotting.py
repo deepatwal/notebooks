@@ -1,5 +1,6 @@
 import psycopg
 import numpy as np
+import pandas as pd
 import umap
 import ast  # For safely evaluating string representations of lists
 import plotly.express as px
@@ -56,7 +57,7 @@ def plot_umap_3d(embeddings, labels=None):
     embedding_3d = reducer.fit_transform(embeddings)
 
     # Create a DataFrame for plotting with Plotly
-    import pandas as pd
+   
     df = pd.DataFrame(embedding_3d, columns=["x", "y", "z"])
     if labels:
         df['label'] = labels
