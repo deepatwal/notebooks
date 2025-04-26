@@ -1,0 +1,23 @@
+.ipynb_checkpoints
+.mypy_cache
+.vscode
+env-notebooks
+env-langchain-llm
+env-semantic-web
+env-ml-bootcamp-2022
+env-base-practice
+env-3-12-llm
+env-pytorch
+env-langchain-ollama
+env-ollama-langchain-embedding
+env-ollama-langchain-embedding-pca
+env-nlp
+datasets
+datasets-backup
+env-ml-bootcamp
+env-ollama-langchain
+note.txt
+# langchain/.env
+langchain/ollama/cache.db
+langchain/ollama/cache-copy.db
+note.txt
