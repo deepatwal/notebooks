@@ -2,7 +2,7 @@ import psycopg
 import numpy as np
 import pandas as pd
 import umap
-import ast  # For safely evaluating string representations of lists
+import ast
 import plotly.express as px
 import os
 from dotenv import load_dotenv
@@ -22,11 +22,11 @@ CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{
 def fetch_embeddings():
     with psycopg.connect(CONNECTION_STRING) as conn:
         with conn.cursor() as cur:
-            # Adjust column name (e.g., cmetadata) if necessary
             cur.execute("""
                 SELECT cmetadata->>'_id' as iri, embedding
                 FROM langchain_pg_embedding
                 WHERE embedding IS NOT NULL
+                AND cmetadata->>'collection_id' = '76b3cdc3-08e6-465e-a807-31a87dc245fa'
             """)
             results = cur.fetchall()
 
@@ -34,7 +34,6 @@ def fetch_embeddings():
     embeddings = []
     for iri, emb in results:
         if emb is not None:
-            # Check if 'emb' is a string representation of a list
             try:
                 # Convert the string representation of the list into an actual list/array
                 emb_list = ast.literal_eval(emb)
@@ -45,9 +44,9 @@ def fetch_embeddings():
 
     return iris, np.stack(embeddings) if embeddings else None
 
+
 # Function to perform UMAP dimensionality reduction and plot 3D visualization using Plotly
 def plot_umap_3d(embeddings, labels=None):
-    # Check if embeddings are valid
     if embeddings is None or len(embeddings) == 0:
         print("No valid embeddings found.")
         return
@@ -57,7 +56,6 @@ def plot_umap_3d(embeddings, labels=None):
     embedding_3d = reducer.fit_transform(embeddings)
 
     # Create a DataFrame for plotting with Plotly
-   
     df = pd.DataFrame(embedding_3d, columns=["x", "y", "z"])
     if labels:
         df['label'] = labels
@@ -81,11 +79,9 @@ def plot_umap_3d(embeddings, labels=None):
     # Show the plot
     fig.show()
 
-# === Run ===
-iris, embeddings = fetch_embeddings()  # Fetch embeddings and their IRI labels
 
-# Check if embeddings are successfully retrieved before plotting
+iris, embeddings = fetch_embeddings()
 if embeddings is not None:
-    plot_umap_3d(embeddings, labels=iris)  # Plot the embeddings in 3D space
+    plot_umap_3d(embeddings, labels=iris)
 else:
     print("No embeddings to visualize.")
