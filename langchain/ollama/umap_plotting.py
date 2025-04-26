@@ -12,7 +12,6 @@ from datetime import datetime
 load_dotenv()
 
 # PostgreSQL connection string
-
 OUTPUT_DIR = os.getenv("OUTPUT_DIR")
 DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT")
@@ -21,32 +20,62 @@ DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+# Function to extract the label or name of an entity
+def extract_entity_label(entity):
+    """
+    Extract the label or name of an entity. If neither is available, use the value after the last '/' in the IRI,
+    replacing underscores with spaces.
+
+    Args:
+        entity (dict): A dictionary containing entity information with keys like 'label', 'name', and 'IRI'.
+
+    Returns:
+        str: The extracted label or name.
+    """
+    if 'label' in entity and entity['label']:
+        return entity['label']
+    elif 'name' in entity and entity['name']:
+        return entity['name']
+    elif 'IRI' in entity:
+        # Extract the value after the last '/' in the IRI and replace underscores with spaces
+        return entity['IRI'].split('/')[-1].replace('_', ' ')
+
 # Function to fetch embeddings and their IRI from the PGVector store
-def fetch_embeddings():
+def fetch_and_process_entities():
+    """
+    Fetch entities from the database and process their labels or names.
+
+    Returns:
+        list: A list of processed entity labels.
+        np.ndarray: A NumPy array of embeddings.
+    """
     with psycopg.connect(CONNECTION_STRING) as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT cmetadata->>'_id' as iri, embedding
-                FROM langchain_pg_embedding
-                WHERE embedding IS NOT NULL
+                SELECT document, embedding
+                FROM public.langchain_pg_embedding
+                WHERE document IS NOT NULL
                 AND collection_id = '76b3cdc3-08e6-465e-a807-31a87dc245fa'
             """)
             results = cur.fetchall()
 
-    iris = []
+    labels = []
     embeddings = []
-    for iri, emb in results:
+    for document, emb in results:
         if emb is not None:
             try:
                 # Convert the string representation of the list into an actual list/array
                 emb_list = ast.literal_eval(emb)
                 embeddings.append(np.array(emb_list, dtype=np.float32))
-                iris.append(iri)
+
+                # Process the document to extract the label or name
+                entity = ast.literal_eval(document)
+                label = extract_entity_label(entity)
+                labels.append(label)
             except (ValueError, SyntaxError) as e:
-                print(f"Error parsing embedding for IRI {iri}: {e}")
+                print(f"Error processing document or embedding: {e}")
 
-    return iris, np.stack(embeddings) if embeddings else None
-
+    return labels, np.stack(embeddings) if embeddings else None
 
 # Function to perform UMAP dimensionality reduction and plot 3D visualization using Plotly
 def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
@@ -80,21 +109,23 @@ def plot_umap_3d(embeddings, labels=None, n_neighbors=15):
     )
 
     # Save the plot as an HTML file in the specified directory with n_neighbors and the current date in the name
+    if not OUTPUT_DIR or not os.path.exists(OUTPUT_DIR):
+        print(f"Error: The output directory '{OUTPUT_DIR}' does not exist. Please create it or update the .env file.")
+        return
 
     current_date = datetime.now().strftime("%Y-%m-%d")
-
     fig.write_html(f"{OUTPUT_DIR}/3d_umap_projection_n{n_neighbors}_{current_date}.html")
 
     # Show the plot
     fig.show()
 
-
-
+# Ensure the output directory exists
 if OUTPUT_DIR and not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 
-iris, embeddings = fetch_embeddings()
+# Fetch and process entities, then plot the UMAP visualization
+labels, embeddings = fetch_and_process_entities()
 if embeddings is not None:
-    plot_umap_3d(embeddings, labels=iris, n_neighbors=15)
+    plot_umap_3d(embeddings, labels=labels, n_neighbors=15)
 else:
     print("No embeddings to visualize.")
