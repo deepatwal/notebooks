@@ -52,7 +52,6 @@ def fetch_and_process_entities():
 
     Returns:
         list: A list of processed entity labels.
-        list: A list of entity types.
         np.ndarray: A NumPy array of embeddings.
     """
     with psycopg.connect(CONNECTION_STRING) as conn:
@@ -66,7 +65,6 @@ def fetch_and_process_entities():
             results = cur.fetchall()
 
     labels = []
-    types = []
     embeddings = []
     for document, emb in results:
         if emb is not None:
@@ -91,18 +89,11 @@ def fetch_and_process_entities():
                 entity = parse_document(document)
                 label = extract_entity_label(entity)
                 labels.append(label)
-
-                # Extract the first type (or join multiple types if needed)
-                entity_type = ", ".join(entity.get("type", [])) if entity else f"Group_{np.random.randint(1000, 99999999)}"
-                # Log when assigning random group IDs
-                if not entity:
-                    logging.warning(f"Assigned random group ID: {entity_type}")
-                types.append(entity_type)
             except (ValueError, SyntaxError) as e:
                 logging.error(f"Error processing document or embedding: {e}")
                 logging.error(f"Problematic document: {document}")
 
-    return labels, types, np.stack(embeddings) if embeddings else None
+    return labels, np.stack(embeddings) if embeddings else None
 
 def parse_document(document):
     """
@@ -138,7 +129,7 @@ def parse_document(document):
         return None
 
 # Function to perform UMAP dimensionality reduction and plot 3D visualization using Plotly
-def plot_umap_3d(embeddings, labels=None, types=None, n_neighbors=15, min_dist=0.1, metric="euclidean"):
+def plot_umap_3d(embeddings, labels=None, n_neighbors=15, min_dist=0.1, metric="euclidean"):
     if embeddings is None or len(embeddings) == 0:
         logging.error("No valid embeddings found.")
         return
@@ -163,8 +154,6 @@ def plot_umap_3d(embeddings, labels=None, types=None, n_neighbors=15, min_dist=0
     df = pd.DataFrame(embedding_3d, columns=["x", "y", "z"])
     if labels:
         df['label'] = labels
-    if types:
-        df['type'] = types
 
     # Create an interactive 3D scatter plot with Plotly
     logging.info("Creating 3D scatter plot...")
@@ -173,10 +162,9 @@ def plot_umap_3d(embeddings, labels=None, types=None, n_neighbors=15, min_dist=0
         x="x",
         y="y",
         z="z",
-        color="type" if types else None,  # Add color based on types
-        hover_data=["label", "type"] if labels and types else None,
+        hover_data=["label"] if labels else None,
         title="3D UMAP Projection of Entity Embeddings",
-        labels={"type": "Entity Type", "label": "Entity Detail"}
+        labels={"label": "Entity Detail"}
     )
     
     # Update layout for better visuals
@@ -204,8 +192,8 @@ def plot_umap_3d(embeddings, labels=None, types=None, n_neighbors=15, min_dist=0
     fig.show()
 
 # Fetch and process entities, then plot the UMAP visualization
-labels, types, embeddings = fetch_and_process_entities()
+labels, embeddings = fetch_and_process_entities()
 if embeddings is not None:
-    plot_umap_3d(embeddings, labels=labels, types=types, n_neighbors=15, min_dist=0.1, metric="cosine")
+    plot_umap_3d(embeddings, labels=labels, n_neighbors=15, min_dist=0.1, metric="cosine")
 else:
     logging.warning("No embeddings to visualize.")
