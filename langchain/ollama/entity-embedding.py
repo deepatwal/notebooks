@@ -33,10 +33,10 @@ DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 CONNECTION_STRING = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-COLLECTION_NAME = "dbpedia_docs_23-04-2025"
+COLLECTION_NAME = "dbpedia_docs_organisation_27-04-2025"
 
 # Local file and SQLite DB path setup
-OUTPUT_FILENAME_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "langchain", "ollama")
+OUTPUT_FILENAME_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "datasets", "cache")
 DB_PATH = os.path.join(OUTPUT_FILENAME_DIR, "cache.db")
 SQLITE_DB_PATH = DB_PATH
 
@@ -63,11 +63,10 @@ summary_prompt = ChatPromptTemplate.from_messages([
     (
         "system",
         "You are an intelligent assistant tasked with summarizing entity descriptions. "
-        "Your summary should be concise and cover all provided information about the entity. "
-        "Include relevant details such as the entity's name, description, attributes, and any other important data. "
+        "Your summary should cover all provided information about the entity. "
         "Do not add introductory phrases like 'Here is a summary'. "
         "Avoid any markdown formatting, such as bold text, bullets, or colons after labels. "
-        "Your summary should be a clean, coherent text that encapsulates the entity's key characteristics without unnecessary elaboration."
+        "Your summary should be a clean, coherent text that encapsulates the entity's characteristics provided without unnecessary elaboration."
     ),
     ("human", "Please summarize the following entity details:\n\n{content}")
 ])
@@ -83,7 +82,7 @@ async def fetch_rows_from_sqlite_in_batches(batch_size=5, last_seen_id=0):
     try:
         async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
             conn.row_factory = aiosqlite.Row
-            async with conn.execute("SELECT id, iri, data FROM iri_cache WHERE id > ? ORDER BY id LIMIT ?", (last_seen_id, batch_size)) as cur:
+            async with conn.execute("SELECT id, iri, data FROM iri_cache_organisation WHERE id > ? ORDER BY id LIMIT ?", (last_seen_id, batch_size)) as cur:
                 rows = [dict(row) async for row in cur]
         return rows
     except Exception as e:
@@ -130,7 +129,7 @@ async def save_last_processed_id_to_db(last_seen_id):
     try:
         async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
             await conn.execute(
-                "INSERT INTO checkpoint (last_seen_id) VALUES (?)",
+                "INSERT INTO checkpoint_organisation (last_seen_id) VALUES (?)",
                 (last_seen_id,)
             )
             await conn.commit()
@@ -141,7 +140,7 @@ async def save_last_processed_id_to_db(last_seen_id):
 async def load_last_processed_id_from_db():
     try:
         async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
-            async with conn.execute("SELECT last_seen_id FROM checkpoint ORDER BY id DESC LIMIT 1") as cur:
+            async with conn.execute("SELECT last_seen_id FROM checkpoint_organisation ORDER BY id DESC LIMIT 1") as cur:
                 result = await cur.fetchone()
                 return result[0] if result else 0
     except Exception as e:
@@ -167,8 +166,9 @@ async def process_from_sqlite(batch_size=5, max_workers=5, max_retries=3, retry_
         for row in batch_rows:
             iri = row["iri"]
             try:
-                data_json = json.loads(row["data"])
-                description = data_json.get("description", "")
+                # data_json = json.loads(row["data"])
+                # description = data_json.get("description", "")
+                description = json.loads(row["data"])
                 if not description or not iri:
                     logger.warning(f"Skipping row with IRI {iri}: missing 'iri' or 'description'")
                     continue
@@ -293,4 +293,4 @@ async def process_from_sqlite_async(batch_size=1000, max_retries=3, retry_delay=
             logger.info(f"Progress: {count}/{limit} records completed.")
 
 # Retain only the asynchronous function call
-asyncio.run(process_from_sqlite(batch_size=5000, limit=None))
+asyncio.run(process_from_sqlite(batch_size=500, limit=None))
