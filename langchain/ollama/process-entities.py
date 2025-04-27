@@ -76,19 +76,6 @@ def fetch_instances_for_class(ontology_class: str) -> List[str]:
         logger.exception(f"[Error] Fetching instances for {ontology_class}: {e}")
         return []
 
-def get_label_from_uri(uri_str: str) -> str:
-    if not (isinstance(uri_str, str) and uri_str.startswith('<') and uri_str.endswith('>')):
-        return str(uri_str)
-    uri = uri_str.strip('<>')
-    try:
-        parsed = urllib.parse.urlparse(uri)
-        part = parsed.fragment or uri.split('/')[-1]
-        decoded = urllib.parse.unquote(part)
-        label = re.sub(r'(?<!^)(?=[A-Z])', ' ', decoded.replace('_', ' ').replace('-', ' '))
-        return re.sub(r'\s+', ' ', label).strip() or part
-    except:
-        return uri
-
 async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 1.0) -> Optional[Graph]:
     """Fetches instance description using rdflib's N3Parser for robust parsing."""
     logger.info(f"Describing instance {instance_iri}")
@@ -110,6 +97,19 @@ async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 
                 await asyncio.sleep(delay * (2 ** (attempt - 1)))
     logger.error(f"Failed to describe {instance_iri} after {retries} attempts.")
     return None
+
+def get_label_from_uri(uri_str: str) -> str:
+    if not (isinstance(uri_str, str) and uri_str.startswith('<') and uri_str.endswith('>')):
+        return str(uri_str)
+    uri = uri_str.strip('<>')
+    try:
+        parsed = urllib.parse.urlparse(uri)
+        part = parsed.fragment or uri.split('/')[-1]
+        decoded = urllib.parse.unquote(part)
+        label = re.sub(r'(?<!^)(?=[A-Z])', ' ', decoded.replace('_', ' ').replace('-', ' '))
+        return re.sub(r'\s+', ' ', label).strip() or part
+    except:
+        return uri
 
 def clean_value_rdflib(node):
     """Cleans RDF node values (URIRef, Literal, BNode)."""
@@ -135,7 +135,7 @@ def process_n3_with_rdflib(graph: Graph) -> str:
             if subj_iri is None:
                 subj_iri = str(s)
 
-        p_label = get_label_from_uri(str(p)).lower()
+        p_label = get_label_from_uri(str(p))
         o_value = clean_value_rdflib(o)
 
         if str(s) == subj_iri:
