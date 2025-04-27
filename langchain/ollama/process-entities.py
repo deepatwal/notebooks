@@ -5,12 +5,12 @@ import urllib.parse
 import re
 from asyncio import Lock, Semaphore
 from collections import defaultdict
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from dotenv import load_dotenv
 import aiosqlite
 import aiohttp
 from rdflib import Graph, URIRef, Literal, BNode
-from SPARQLWrapper import SPARQLWrapper, JSON
+from SPARQLWrapper import SPARQLWrapper
 from more_itertools import chunked
 import argparse
 
@@ -98,66 +98,38 @@ async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 
     logger.error(f"Failed to describe {instance_iri} after {retries} attempts.")
     return None
 
-def get_label_from_uri(uri_str: str) -> str:
-    if not (isinstance(uri_str, str) and uri_str.startswith('<') and uri_str.endswith('>')):
-        return str(uri_str)
-    uri = uri_str.strip('<>')
-    try:
-        parsed = urllib.parse.urlparse(uri)
-        part = parsed.fragment or uri.split('/')[-1]
-        decoded = urllib.parse.unquote(part)
-        label = re.sub(r'(?<!^)(?=[A-Z])', ' ', decoded.replace('_', ' ').replace('-', ' '))
-        return re.sub(r'\s+', ' ', label).strip() or part
-    except:
-        return uri
-
-def clean_value_rdflib(node):
-    """Cleans RDF node values (URIRef, Literal, BNode)."""
+def get_label_from_uri(node) -> str:
+    """Extracts the last fragment of a URIRef or handles other RDF node types."""
     if isinstance(node, URIRef):
-        return get_label_from_uri(str(node))
+        return node.fragment or node.rsplit("/", 1)[-1]
     elif isinstance(node, Literal):
-        return str(node.value)  # Get the literal value directly
+        return str(node.value)  # Return the literal value
     elif isinstance(node, BNode):
-        return str(node)  # Or handle blank nodes as needed
-    return ""
+        return str(node)  # Handle blank nodes as needed
+    return str(node)  # Fallback for other types
 
-def process_n3_with_rdflib(graph: Graph) -> str:
+
+def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
     """Processes the RDF graph using rdflib."""
     if not graph:
         return "No graph data provided."
 
-    subj_iri = None
     props = defaultdict(list)
-    inc = []
-
+    incoming: List[Tuple[str, str, str]] = []
+ 
     for s, p, o in graph:
-        if isinstance(s, URIRef):  # Identify the main subject (first URIRef encountered)
-            if subj_iri is None:
-                subj_iri = str(s)
+        s_label = get_label_from_uri(s)
+        p_label = get_label_from_uri(p)
+        o_value = get_label_from_uri(o)
 
-        p_label = get_label_from_uri(str(p))
-        o_value = clean_value_rdflib(o)
-
-        if str(s) == subj_iri:
+        if str(s) == instance_iri:
             props[p_label].append(o_value)
-        elif str(o) == subj_iri and isinstance(s, URIRef): # Only consider incoming from URIRefs
-            inc.append((clean_value_rdflib(s), p_label, get_label_from_uri(subj_iri)))
+        else:
+            incoming.append((s_label, p_label, o_value))  # Adjusted to match expected tuple type
 
-    if subj_iri is None:
-        return "No URIRef subjects found in the graph."
-
-    out = [f"IRI: {subj_iri}", f"label: {next(iter(props.get('label', [])), get_label_from_uri(subj_iri))}" ]
-    if props:
-        out.append("\nOutgoing Relations:")
-        for k in sorted(props):
-            out.append(f"{k}: {', '.join(sorted(props[k]))}")
-    if inc:
-        out.append("\nIncoming Relations:")
-        # Ensure all elements in 'inc' are properly converted to RDF-compatible types before sorting
-        inc = [(clean_value_rdflib(s), clean_value_rdflib(p), clean_value_rdflib(o)) for s, p, o in inc if isinstance(s, (URIRef, Literal, BNode)) and isinstance(p, (URIRef, Literal, BNode)) and isinstance(o, (URIRef, Literal, BNode))]
-        for s, p, o in sorted(inc, key=lambda triple: (str(triple[0]), str(triple[1]), str(triple[2]))):
-            out.append(f"({s}, {p}, {o})")
-    return '\n'.join(out)
+    logger.debug(f"props: {props}")
+    logger.debug(f"incoming: {incoming}")
+    return ""
 
 async def process_instance_worker(instance_iri: str, conn: aiosqlite.Connection):
     try:
@@ -172,7 +144,7 @@ async def process_instance_worker(instance_iri: str, conn: aiosqlite.Connection)
             graph = await describe_instance(instance_iri)
 
         if graph:
-            desc = process_n3_with_rdflib(graph)
+            desc = process_n3_with_rdflib(graph, instance_iri)
             await conn.execute(
                 "INSERT OR REPLACE INTO iri_cache_organisation (iri, processed, data) VALUES (?, ?, ?)",
                 (instance_iri, 1, desc)
