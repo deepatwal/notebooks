@@ -123,12 +123,15 @@ def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
         o_value = get_label_from_uri(o)
 
         if str(s) == instance_iri:
-            props[p_label].append(o_value)
+            if "homepage" in p_label or "website" in p_label:
+                props[p_label].append(str(o))
+            else:
+                props[p_label].append(o_value)
         else:
-            incoming.append((s_label, p_label, o_value))  # Adjusted to match expected tuple type
+            incoming.append((s_label, p_label, o_value))
 
-    logger.debug(f"props: {props}")
-    logger.debug(f"incoming: {incoming}")
+    logger.info(f"props: {props}")
+    logger.info(f"incoming: {incoming}")
     return ""
 
 async def process_instance_worker(instance_iri: str, conn: aiosqlite.Connection):
