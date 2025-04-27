@@ -4,15 +4,15 @@ import logging
 import urllib.parse
 import re
 from asyncio import Lock, Semaphore
-from collections import Counter, defaultdict
+from collections import defaultdict
 from typing import List, Optional
 from dotenv import load_dotenv
-import concurrent.futures
-import argparse
 import aiosqlite
 import aiohttp
-from more_itertools import chunked
+from rdflib import Graph, URIRef, Literal, BNode
 from SPARQLWrapper import SPARQLWrapper, JSON
+from more_itertools import chunked
+import argparse
 
 load_dotenv()
 
@@ -52,19 +52,7 @@ def get_sparql(return_format):
 
 def fetch_classes() -> List[str]:
     logger.info("Fetching ontology classes from model graph")
-    # class_query = r"""
-    # PREFIX owl: <http://www.w3.org/2002/07/owl#>
-    # SELECT ?class
-    # FROM <http://dbpedia.org/model>
-    # WHERE { ?class a owl:Class . 
-    #   FILTER(regex(STRAFTER(STR(?class), "http://dbpedia.org/ontology/"), "^[\\x00-\\x7F]+$")) }
-    # ORDER BY ?class
-    # """
     try:
-    #     sparql = get_sparql(return_format=JSON)
-    #     sparql.setQuery(class_query)
-    #     results = sparql.query().convert()
-    #     return [b['class']['value'] for b in results['results']['bindings']]
         return  ['http://dbpedia.org/ontology/Organisation']
     except Exception as e:
         logger.exception(f"[Error] Fetching classes: {e}")
@@ -74,8 +62,9 @@ def fetch_instances_for_class(ontology_class: str) -> List[str]:
     logger.info(f"Fetching instances of class {ontology_class}")
     instance_query = f"""
     SELECT ?instance
-    WHERE {{ BIND(<{ontology_class}> AS ?entity) ?instance a ?entity . }}
+    WHERE {{ ?instance a <{ontology_class}> . }}
     ORDER BY ?instance
+    LIMIT 10
     """
     try:
         sparql = get_sparql(return_format=JSON)
@@ -99,29 +88,8 @@ def get_label_from_uri(uri_str: str) -> str:
     except:
         return uri
 
-def clean_value(rdf_term: Optional[str]) -> str:
-    if rdf_term is None:
-        return ""
-    t = rdf_term.strip()
-    if t.startswith('<') and t.endswith('>'):
-        return get_label_from_uri(t)
-    if t.startswith('"'):
-        m = re.match(r'"(.*?)"', t)
-        return m.group(1) if m else t
-    return t
-
-async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 1.0) -> Optional[str]:
-    """
-    Fetches a description of the given instance IRI using the SPARQL DESCRIBE query.
-
-    Args:
-        instance_iri (str): The IRI of the instance to describe.
-        retries (int): Number of retry attempts in case of failure.
-        delay (float): Initial delay between retries, with exponential backoff.
-
-    Returns:
-        Optional[str]: The description of the instance in N3 format, or None if failed.
-    """
+async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 1.0) -> Optional[Graph]:
+    """Fetches instance description using rdflib's N3Parser for robust parsing."""
     logger.info(f"Describing instance {instance_iri}")
     query = f"DESCRIBE <{instance_iri}>"
     for attempt in range(1, retries + 1):
@@ -129,78 +97,65 @@ async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 
             async with aiohttp.ClientSession() as session:
                 async with session.post(SPARQL_ENDPOINT, data={"query": query}, headers={"Accept": "text/n3"}) as response:
                     if response.status == 200:
-                        return await response.text()
+                        n3_text = await response.text()
+                        g = Graph()
+                        g.parse(data=n3_text, format="n3")  # Use rdflib's parser
+                        return g
                     else:
-                        logger.warning(f"SPARQL query failed with status {response.status}: {await response.text()}")
+                        logger.warning(f"SPARQL query failed: {response.status} - {await response.text()}")
         except Exception as e:
             logger.warning(f"[Retry {attempt}/{retries}] Error describing {instance_iri}: {e}")
             if attempt < retries:
                 await asyncio.sleep(delay * (2 ** (attempt - 1)))
-    logger.error(f"Failed to describe instance after {retries} attempts: {instance_iri}")
+    logger.error(f"Failed to describe {instance_iri} after {retries} attempts.")
     return None
 
-def process_n3_simplified(n3_data: str, delimiters: str = " ;,.", log_skipped: bool = True) -> str:
-    """
-    Process N3 data and extract triples in a simplified format.
+def clean_value_rdflib(node):
+    """Cleans RDF node values (URIRef, Literal, BNode)."""
+    if isinstance(node, URIRef):
+        return get_label_from_uri(str(node))
+    elif isinstance(node, Literal):
+        return str(node.value)  # Get the literal value directly
+    elif isinstance(node, BNode):
+        return str(node)  # Or handle blank nodes as needed
+    return ""
 
-    Args:
-        n3_data (str): The N3 data to process.
-        delimiters (str): Allowed delimiters for triples (default: " ;,." ).
-        log_skipped (bool): Whether to log skipped triples (default: True).
+def process_n3_with_rdflib(graph: Graph) -> str:
+    """Processes the RDF graph using rdflib."""
+    if not graph:
+        return "No graph data provided."
 
-    Returns:
-        str: A summary of the processed triples.
-    """
-    triples, subjects = [], []
-    # Create a regex pattern dynamically based on allowed delimiters
-    delimiter_pattern = f"[{re.escape(delimiters)}]"
-    pat = re.compile(rf'^(\s*<[^>]+>|_:\S+)\s+(<[^>]+>)\s+(.*)\s*{delimiter_pattern}?\s*$')
+    subj_iri = None
+    props = defaultdict(list)
+    inc = []
 
-    for ln in n3_data.splitlines():
-        ln = ln.strip()
-        if not ln or ln.startswith('#'):
-            continue
-        # Normalize line endings to ensure consistent parsing
-        if ln[-1] in delimiters:
-            ln = ln[:-1] + '.'
-        m = pat.match(ln)
-        if m:
-            s, p, o = m.groups()
-            triples.append((s, p, o))
-            if s.startswith('<'):
-                subjects.append(s)
-        elif log_skipped:
-            # Enhance logging for skipped triples to include more context
-            logger.warning(f"Skipping malformed triple: {ln}. Pattern mismatch or unexpected structure. Line content: {ln}")
+    for s, p, o in graph:
+        if isinstance(s, URIRef):  # Identify the main subject (first URIRef encountered)
+            if subj_iri is None:
+                subj_iri = str(s)
 
-    if not triples:
-        return "No valid triples found."
-    if not subjects:
-        return "No URI subjects found."
+        p_label = get_label_from_uri(str(p)).lower()
+        o_value = clean_value_rdflib(o)
 
-    main = Counter(subjects).most_common(1)[0][0]
-    subj_iri = main.strip('<>')
-    main_lbl = get_label_from_uri(main)
-    props, inc = defaultdict(set), set()
+        if str(s) == subj_iri:
+            props[p_label].append(o_value)
+        elif str(o) == subj_iri and isinstance(s, URIRef): # Only consider incoming from URIRefs
+            inc.append((clean_value_rdflib(s), p_label, get_label_from_uri(subj_iri)))
 
-    for s, p, o in triples:
-        lbl = get_label_from_uri(p).lower()
-        o_clean = o.strip() if o else ""
-        if s == main:
-            props[lbl].add(clean_value(o_clean))
-        elif o_clean == main:
-            inc.add((clean_value(s), lbl, main_lbl))
+    if subj_iri is None:
+        return "No URIRef subjects found in the graph."
 
-    out = [f"IRI: {subj_iri}", f"label: {next(iter(props.get('label', [])), main_lbl)}"]
+    out = [f"IRI: {subj_iri}", f"label: {next(iter(props.get('label', [])), get_label_from_uri(subj_iri))}" ]
     if props:
-        out.append("\nOutgoing Relationships:")
+        out.append("\nOutgoing Relations:")
         for k in sorted(props):
             out.append(f"{k}: {', '.join(sorted(props[k]))}")
     if inc:
-        out.append("\nIncoming Relationships:")
-        for s, p, o in sorted(inc):
+        out.append("\nIncoming Relations:")
+        # Ensure all elements in 'inc' are properly converted to RDF-compatible types before sorting
+        inc = [(clean_value_rdflib(s), clean_value_rdflib(p), clean_value_rdflib(o)) for s, p, o in inc if isinstance(s, (URIRef, Literal, BNode)) and isinstance(p, (URIRef, Literal, BNode)) and isinstance(o, (URIRef, Literal, BNode))]
+        for s, p, o in sorted(inc, key=lambda triple: (str(triple[0]), str(triple[1]), str(triple[2]))):
             out.append(f"({s}, {p}, {o})")
-
     return '\n'.join(out)
 
 async def process_instance_worker(instance_iri: str, conn: aiosqlite.Connection):
@@ -213,10 +168,10 @@ async def process_instance_worker(instance_iri: str, conn: aiosqlite.Connection)
 
         async with request_semaphore:
             logger.debug(f"Acquired semaphore for instance: {instance_iri}")
-            data = await describe_instance(instance_iri)
+            graph = await describe_instance(instance_iri)
 
-        if data:
-            desc = process_n3_simplified(data)
+        if graph:
+            desc = process_n3_with_rdflib(graph)
             await conn.execute(
                 "INSERT OR REPLACE INTO iri_cache_organisation (iri, processed, data) VALUES (?, ?, ?)",
                 (instance_iri, 1, desc)
@@ -257,9 +212,6 @@ async def main():
         await conn.execute("PRAGMA journal_mode=WAL")  # Enable Write-Ahead Logging for better concurrency
         try:
             loop = asyncio.get_running_loop()
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS)
-            loop.set_default_executor(executor)
-
             classes = fetch_classes()
             if not classes:
                 logger.warning("No classes fetched. Ensure the SPARQL endpoint is configured correctly.")
