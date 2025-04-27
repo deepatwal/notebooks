@@ -36,7 +36,7 @@ DB_PATH = os.path.join(OUTPUT_FILENAME_DIR, "cache.db")
 
 MAX_CONCURRENT_REQUESTS = 5
 MAX_CONCURRENT_CLASSES = 5
-BATCH_SIZE = 500
+BATCH_SIZE = 50
 
 instance_lock = Lock()
 class_lock = Lock()
