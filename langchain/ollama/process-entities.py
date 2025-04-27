@@ -34,8 +34,8 @@ SPARQL_ENDPOINT = urllib.parse.urljoin(GRAPHDB_BASE_URL.rstrip('/') + '/', f"rep
 OUTPUT_FILENAME_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "datasets", "cache")
 DB_PATH = os.path.join(OUTPUT_FILENAME_DIR, "cache.db")
 
-MAX_CONCURRENT_REQUESTS = 5
-MAX_CONCURRENT_CLASSES = 5
+MAX_CONCURRENT_REQUESTS = 1
+MAX_CONCURRENT_CLASSES = 1
 BATCH_SIZE = 50
 
 instance_lock = Lock()
@@ -67,10 +67,11 @@ def fetch_instances_for_class(ontology_class: str) -> List[str]:
     LIMIT 10
     """
     try:
-        sparql = get_sparql(return_format=JSON)
-        sparql.setQuery(instance_query)
-        results = sparql.query().convert()
-        return [b['instance']['value'] for b in results['results']['bindings']]
+        # sparql = get_sparql(return_format=JSON)
+        # sparql.setQuery(instance_query)
+        # results = sparql.query().convert()
+        # return [b['instance']['value'] for b in results['results']['bindings']]
+        return ['http://dbpedia.org/resource/Volvo']
     except Exception as e:
         logger.exception(f"[Error] Fetching instances for {ontology_class}: {e}")
         return []
