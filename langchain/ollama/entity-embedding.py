@@ -129,7 +129,7 @@ async def save_last_processed_id_to_db(last_seen_id):
     try:
         async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
             await conn.execute(
-                "INSERT INTO checkpoint_organisation (last_seen_id) VALUES (?)",
+                "INSERT INTO checkpoint_organisation (last_seen_id, timestamp) VALUES (?, CURRENT_TIMESTAMP)",
                 (last_seen_id,)
             )
             await conn.commit()
@@ -140,7 +140,7 @@ async def save_last_processed_id_to_db(last_seen_id):
 async def load_last_processed_id_from_db():
     try:
         async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
-            async with conn.execute("SELECT last_seen_id FROM checkpoint_organisation ORDER BY id DESC LIMIT 1") as cur:
+            async with conn.execute("SELECT last_seen_id FROM checkpoint_organisation ORDER BY timestamp DESC LIMIT 1") as cur:
                 result = await cur.fetchone()
                 return result[0] if result else 0
     except Exception as e:
