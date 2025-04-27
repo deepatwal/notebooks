@@ -12,14 +12,21 @@ import concurrent.futures
 import argparse
 from dotenv import load_dotenv
 import sqlite3
+import time
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger: logging.Logger = logging.getLogger(__name__)
+
 
 # Configuration
 GRAPHDB_BASE_URL = os.getenv("GRAPHDB_BASE_URL")
 GRAPHDB_REPOSITORY = os.getenv("GRAPHDB_REPOSITORY")
 
+# Validate environment variables with a user-friendly error message
 if not GRAPHDB_BASE_URL or not GRAPHDB_REPOSITORY:
+    logger.error("Environment variables GRAPHDB_BASE_URL and GRAPHDB_REPOSITORY are required but not set.")
     raise ValueError("GRAPHDB_BASE_URL and GRAPHDB_REPOSITORY must be set in the environment variables")
 
 SPARQL_ENDPOINT = urllib.parse.urljoin(GRAPHDB_BASE_URL.rstrip('/') + '/', f"repositories/{GRAPHDB_REPOSITORY}")
@@ -30,9 +37,6 @@ DB_PATH = os.path.join(OUTPUT_FILENAME_DIR, "cache.db")
 MAX_CONCURRENT_REQUESTS = 5
 MAX_CONCURRENT_CLASSES = 5
 BATCH_SIZE = 500
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
 
 instance_lock = Lock()
 class_lock = Lock()
@@ -106,6 +110,17 @@ def clean_value(rdf_term: Optional[str]) -> str:
     return t
 
 async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 1.0) -> Optional[str]:
+    """
+    Fetches a description of the given instance IRI using the SPARQL DESCRIBE query.
+
+    Args:
+        instance_iri (str): The IRI of the instance to describe.
+        retries (int): Number of retry attempts in case of failure.
+        delay (float): Initial delay between retries, with exponential backoff.
+
+    Returns:
+        Optional[str]: The description of the instance in N3 format, or None if failed.
+    """
     logger.info(f"Describing instance {instance_iri}")
     query = f"DESCRIBE <{instance_iri}>"
     for attempt in range(1, retries + 1):
@@ -118,6 +133,7 @@ async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 
             logger.warning(f"[Retry {attempt}/{retries}] Error describing {instance_iri}: {e}")
             if attempt < retries:
                 await asyncio.sleep(delay * (2 ** (attempt - 1)))
+    logger.error(f"Failed to describe instance after {retries} attempts: {instance_iri}")
     return None
 
 def process_n3_simplified(n3_data: str) -> str:
@@ -156,65 +172,91 @@ def process_n3_simplified(n3_data: str) -> str:
         for s, p, o in sorted(inc): out.append(f"({s}, {p}, {o})")
     return '\n'.join(out)
 
-def add_processed_iri(instance_iri: str, processed: bool = True, data: Optional[str] = None):
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        with conn:
+def add_processed_iri(conn: sqlite3.Connection, instance_iri: str, processed: bool = True, data: Optional[str] = None):
+    retries = 3
+    for attempt in range(retries):
+        try:
             conn.execute(
                 "INSERT OR REPLACE INTO iri_cache_organisation (iri, processed, data) VALUES (?, ?, ?)",
                 (instance_iri, 1 if processed else 0, data if data else '')
             )
-    finally:
-        conn.close()
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e) and attempt < retries - 1:
+                time.sleep(0.1 * (2 ** attempt))  # Exponential backoff
+            else:
+                logger.exception(f"Error adding processed IRI: {e}")
+                break
 
-async def is_processed(instance_iri: str) -> bool:
-    conn = sqlite3.connect(DB_PATH)
+async def is_processed(instance_iri: str, conn: sqlite3.Connection) -> bool:
+    cur = conn.cursor()
     try:
-        cur = conn.cursor()
         cur.execute("SELECT processed FROM iri_cache_organisation WHERE iri = ?", (instance_iri,))
         row = cur.fetchone()
         return row is not None and row[0] == 1
     finally:
-        conn.close()
+        cur.close()
 
-async def process_instance_worker(instance_iri: str):
+async def process_instance_worker(instance_iri: str, conn: sqlite3.Connection):
     try:
-        if await is_processed(instance_iri):
+        if await is_processed(instance_iri, conn):
             logger.debug(f"Skipping already processed IRI: {instance_iri}")
             return
+
         async with request_semaphore:
+            logger.debug(f"Acquired semaphore for instance: {instance_iri}")
             data = await describe_instance(instance_iri)
+
         if data:
             desc = process_n3_simplified(data)
-            add_processed_iri(instance_iri, processed=True, data=desc)
-            logger.debug(f"Saved: {instance_iri}")
+            add_processed_iri(conn, instance_iri, processed=True, data=desc)
+            logger.info(f"Processed and saved instance: {instance_iri}")
         else:
-            add_processed_iri(instance_iri, processed=False)
+            add_processed_iri(conn, instance_iri, processed=False)
+            logger.warning(f"No data returned for instance: {instance_iri}")
     except Exception as e:
         logger.exception(f"[Error] Worker {instance_iri}: {e}")
-        add_processed_iri(instance_iri, processed=False)
+        add_processed_iri(conn, instance_iri, processed=False)
+    finally:
+        logger.debug(f"Released semaphore for instance: {instance_iri}")
 
-async def process_class_worker(owl_class: str):
+async def process_class_worker(owl_class: str, conn: sqlite3.Connection):
     async with class_semaphore:
         instances = fetch_instances_for_class(owl_class)
         if not instances:
             return
         for chunk in chunked(instances, BATCH_SIZE):
-            await asyncio.gather(*(process_instance_worker(i) for i in chunk))
+            await asyncio.gather(*(process_instance_worker(i, conn) for i in chunk))
+            logger.info(f"Processed {len(chunk)} instances for class {owl_class}")
         logger.info(f"Processed class {owl_class}: {len(instances)} instances")
 
 async def main():
     os.makedirs(OUTPUT_FILENAME_DIR, exist_ok=True)
 
-    loop = asyncio.get_running_loop()
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS)
-    loop.set_default_executor(executor)
+    conn = sqlite3.connect(DB_PATH)  # Open a shared connection
+    conn.execute("PRAGMA journal_mode=WAL")  # Enable Write-Ahead Logging for better concurrency
+    try:
+        loop = asyncio.get_running_loop()
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS)
+        loop.set_default_executor(executor)
 
-    classes = fetch_classes()
-    tasks = [process_class_worker(owl_class) for owl_class in classes]
-    await asyncio.gather(*tasks)
+        classes = fetch_classes()
+        if not classes:
+            logger.warning("No classes fetched. Ensure the SPARQL endpoint is configured correctly.")
+            return
+
+        tasks = [process_class_worker(owl_class, conn) for owl_class in classes]
+        await asyncio.gather(*tasks)
+    except Exception as e:
+        logger.exception(f"Error in main: {e}")
+    finally:
+        conn.close()  # Ensure the connection is closed
+        logger.info("SQLite connection closed.")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Process interrupted by user")
