@@ -139,13 +139,13 @@ async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 
     logger.error(f"Failed to describe instance after {retries} attempts: {instance_iri}")
     return None
 
-def process_n3_simplified(n3_data: str, delimiters: str = ";,.", log_skipped: bool = True) -> str:
+def process_n3_simplified(n3_data: str, delimiters: str = " ;,.", log_skipped: bool = True) -> str:
     """
     Process N3 data and extract triples in a simplified format.
 
     Args:
         n3_data (str): The N3 data to process.
-        delimiters (str): Allowed delimiters for triples (default: ";,.").
+        delimiters (str): Allowed delimiters for triples (default: " ;,." ).
         log_skipped (bool): Whether to log skipped triples (default: True).
 
     Returns:
