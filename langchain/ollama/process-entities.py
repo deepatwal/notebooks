@@ -140,7 +140,7 @@ def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
         description.append(f"{prop}: {', '.join(values)}")
 
     for s_label, p_label, o_value in incoming:
-        description.append(f"({s_label} [{p_label}] {o_value})")
+        description.append(f"({s_label} {p_label} {o_value})")
 
     description_str = "\n".join(description)
     logger.info(f"description_str: {description_str}")
