@@ -44,6 +44,12 @@ output_file_lock = Lock()
 request_semaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
 class_semaphore = Semaphore(MAX_CONCURRENT_CLASSES)
 
+def get_sparql(return_format):
+    """Initializes and returns a SPARQLWrapper instance."""
+    sparql = SPARQLWrapper(SPARQL_ENDPOINT)
+    sparql.setReturnFormat(return_format)
+    return sparql
+
 def fetch_classes() -> List[str]:
     logger.info("Fetching ontology classes from model graph")
     # class_query = r"""
