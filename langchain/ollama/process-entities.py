@@ -24,12 +24,12 @@ if not GRAPHDB_BASE_URL or not GRAPHDB_REPOSITORY:
 
 SPARQL_ENDPOINT = urllib.parse.urljoin(GRAPHDB_BASE_URL.rstrip('/') + '/', f"repositories/{GRAPHDB_REPOSITORY}")
 
-OUTPUT_FILENAME_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "langchain", "ollama")
+OUTPUT_FILENAME_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "datasets", "cache")
 DB_PATH = os.path.join(OUTPUT_FILENAME_DIR, "cache.db")
 
 MAX_CONCURRENT_REQUESTS = 5
 MAX_CONCURRENT_CLASSES = 5
-BATCH_SIZE = 50
+BATCH_SIZE = 500
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -47,19 +47,20 @@ def get_sparql(return_format=JSON):
 
 def fetch_classes() -> List[str]:
     logger.info("Fetching ontology classes from model graph")
-    class_query = r"""
-    PREFIX owl: <http://www.w3.org/2002/07/owl#>
-    SELECT ?class
-    FROM <http://dbpedia.org/model>
-    WHERE { ?class a owl:Class . 
-      FILTER(regex(STRAFTER(STR(?class), "http://dbpedia.org/ontology/"), "^[\\x00-\\x7F]+$")) }
-    ORDER BY ?class
-    """
+    # class_query = r"""
+    # PREFIX owl: <http://www.w3.org/2002/07/owl#>
+    # SELECT ?class
+    # FROM <http://dbpedia.org/model>
+    # WHERE { ?class a owl:Class . 
+    #   FILTER(regex(STRAFTER(STR(?class), "http://dbpedia.org/ontology/"), "^[\\x00-\\x7F]+$")) }
+    # ORDER BY ?class
+    # """
     try:
-        sparql = get_sparql(return_format=JSON)
-        sparql.setQuery(class_query)
-        results = sparql.query().convert()
-        return [b['class']['value'] for b in results['results']['bindings']]
+    #     sparql = get_sparql(return_format=JSON)
+    #     sparql.setQuery(class_query)
+    #     results = sparql.query().convert()
+    #     return [b['class']['value'] for b in results['results']['bindings']]
+        return  ['http://dbpedia.org/ontology/Organisation']
     except Exception as e:
         logger.exception(f"[Error] Fetching classes: {e}")
         return []
@@ -68,8 +69,6 @@ def fetch_instances_for_class(ontology_class: str) -> List[str]:
     logger.info(f"Fetching instances of class {ontology_class}")
     instance_query = f"""
     SELECT ?instance
-    FROM <http://dbpedia.org/model>
-    FROM <http://dbpedia.org/data>
     WHERE {{ BIND(<{ontology_class}> AS ?entity) ?instance a ?entity . }}
     ORDER BY ?instance
     """
@@ -162,7 +161,7 @@ def add_processed_iri(instance_iri: str, processed: bool = True, data: Optional[
     try:
         with conn:
             conn.execute(
-                "INSERT OR REPLACE INTO iri_cache (iri, processed, data) VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO iri_cache_organisation (iri, processed, data) VALUES (?, ?, ?)",
                 (instance_iri, 1 if processed else 0, data if data else '')
             )
     finally:
@@ -172,7 +171,7 @@ async def is_processed(instance_iri: str) -> bool:
     conn = sqlite3.connect(DB_PATH)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT processed FROM iri_cache WHERE iri = ?", (instance_iri,))
+        cur.execute("SELECT processed FROM iri_cache_organisation WHERE iri = ?", (instance_iri,))
         row = cur.fetchone()
         return row is not None and row[0] == 1
     finally:
