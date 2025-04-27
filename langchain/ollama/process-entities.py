@@ -122,6 +122,10 @@ def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
         p_label = get_label_from_uri(p)
         o_label = get_label_from_uri(o)
 
+        s_label = s_label.replace('_', ' ')
+        p_label = p_label.replace('_', ' ')
+        o_value = o_label.replace('_', ' ')
+
         if str(s) == instance_iri:
             if "homepage" in p_label or "website" in p_label:
                 props[p_label].append(str(o))
