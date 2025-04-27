@@ -122,9 +122,9 @@ def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
         p_label = get_label_from_uri(p)
         o_label = get_label_from_uri(o)
 
-        s_label = s_label.replace('_', ' ')
-        p_label = p_label.replace('_', ' ')
-        o_value = o_label.replace('_', ' ')
+        s_label = s_label.replace('_', ' ').replace('__', ' ')
+        p_label = p_label.replace('_', ' ').replace('__', ' ')
+        o_value = o_label.replace('_', ' ').replace('__', ' ')
 
         if str(s) == instance_iri:
             if "homepage" in p_label or "website" in p_label:
@@ -140,7 +140,7 @@ def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
         description.append(f"{prop}: {', '.join(values)}")
 
     for s_label, p_label, o_value in incoming:
-        description.append(f"({s_label} {p_label} {o_value})")
+        description.append(f"({s_label} [{p_label}] {o_value})")
 
     description_str = "\n".join(description)
     logger.info(f"description_str: {description_str}")
