@@ -168,7 +168,7 @@ async def process_from_sqlite(batch_size=5, max_workers=5, max_retries=3, retry_
             try:
                 # data_json = json.loads(row["data"])
                 # description = data_json.get("description", "")
-                description = json.loads(row["data"])
+                description = row["data"]
                 if not description or not iri:
                     logger.warning(f"Skipping row with IRI {iri}: missing 'iri' or 'description'")
                     continue
