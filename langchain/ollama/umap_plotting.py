@@ -184,7 +184,7 @@ def plot_umap_3d(
 
     # Save HTML plot
     plot_path = os.path.join(OUTPUT_DIR, f"3d_umap_projection_{n_neighbors}_{timestamp}.html")
-    fig.write_html(plot_path)
+    fig.write_html(plot_path, include_plotlyjs="cdn")
     logging.info(f"3D UMAP plot saved at {plot_path}")
 
     fig.show()

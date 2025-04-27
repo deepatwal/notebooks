@@ -5,7 +5,7 @@ import urllib.parse
 import re
 from asyncio import Lock, Semaphore
 from collections import Counter, defaultdict
-from typing import List, Set, Optional
+from typing import List, Optional
 from SPARQLWrapper import SPARQLWrapper, N3, JSON
 from more_itertools import chunked
 import concurrent.futures
