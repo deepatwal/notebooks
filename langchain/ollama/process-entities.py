@@ -154,7 +154,7 @@ def process_n3_simplified(n3_data: str, delimiters: str = " ;,.", log_skipped: b
     triples, subjects = [], []
     # Create a regex pattern dynamically based on allowed delimiters
     delimiter_pattern = f"[{re.escape(delimiters)}]"
-    pat = re.compile(rf'^\s*(<[^>]+>|_:\S+)\s+(<[^>]+>)\s+(.*)\s*{delimiter_pattern}\s*$')
+    pat = re.compile(rf'^(\s*<[^>]+>|_:\S+)\s+(<[^>]+>)\s+(.*)\s*{delimiter_pattern}?\s*$')
 
     for ln in n3_data.splitlines():
         ln = ln.strip()
@@ -170,7 +170,8 @@ def process_n3_simplified(n3_data: str, delimiters: str = " ;,.", log_skipped: b
             if s.startswith('<'):
                 subjects.append(s)
         elif log_skipped:
-            logger.warning(f"Skipping malformed triple: {ln}")
+            # Enhance logging for skipped triples to include more context
+            logger.warning(f"Skipping malformed triple: {ln}. Pattern mismatch or unexpected structure. Line content: {ln}")
 
     if not triples:
         return "No valid triples found."
