@@ -71,7 +71,7 @@ def fetch_instances_for_class(ontology_class: str) -> List[str]:
         # sparql.setQuery(instance_query)
         # results = sparql.query().convert()
         # return [b['instance']['value'] for b in results['results']['bindings']]
-        return ['http://dbpedia.org/resource/Volvo']
+        return ['http://dbpedia.org/resource/FC_Bihor_Oradea_(1958)']
     except Exception as e:
         logger.exception(f"[Error] Fetching instances for {ontology_class}: {e}")
         return []
@@ -139,6 +139,7 @@ def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
         description.append(f"({s_label} {p_label} {o_value})")
 
     description_str = "\n".join(description)
+    logger.info(f"description_str: {description_str}")
     return description_str
 
 async def process_instance_worker(instance_iri: str, conn: aiosqlite.Connection):
