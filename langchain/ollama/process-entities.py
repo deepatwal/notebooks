@@ -111,8 +111,8 @@ def get_label_from_uri(node) -> str:
 
 def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
     """Processes the RDF graph using rdflib."""
-    if not graph:
-        return "No graph data provided."
+    if not graph or not instance_iri:
+        return "No graph data or instance IRI provided."
 
     props = defaultdict(list)
     incoming: List[Tuple[str, str, str]] = []
@@ -130,9 +130,16 @@ def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
         else:
             incoming.append((s_label, p_label, o_value))
 
-    logger.info(f"props: {props}")
-    logger.info(f"incoming: {incoming}")
-    return ""
+    description = []
+    description.append(f"IRI: {instance_iri}")
+    for prop, values in props.items():
+        description.append(f"{prop}: {', '.join(values)}")
+
+    for s_label, p_label, o_value in incoming:
+        description.append(f"({s_label} {p_label} {o_value})")
+
+    description_str = "\n".join(description)
+    return description_str
 
 async def process_instance_worker(instance_iri: str, conn: aiosqlite.Connection):
     try:
