@@ -139,26 +139,49 @@ async def describe_instance(instance_iri: str, retries: int = 3, delay: float = 
     logger.error(f"Failed to describe instance after {retries} attempts: {instance_iri}")
     return None
 
-def process_n3_simplified(n3_data: str) -> str:
+def process_n3_simplified(n3_data: str, delimiters: str = ";,.", log_skipped: bool = True) -> str:
+    """
+    Process N3 data and extract triples in a simplified format.
+
+    Args:
+        n3_data (str): The N3 data to process.
+        delimiters (str): Allowed delimiters for triples (default: ";,.").
+        log_skipped (bool): Whether to log skipped triples (default: True).
+
+    Returns:
+        str: A summary of the processed triples.
+    """
     triples, subjects = [], []
-    pat = re.compile(r'^\s*(<[^>]+>|_:\\S+)\s+(<[^>]+>)\s+(.*)\s*\.\s*$')
+    # Create a regex pattern dynamically based on allowed delimiters
+    delimiter_pattern = f"[{re.escape(delimiters)}]"
+    pat = re.compile(rf'^\s*(<[^>]+>|_:\S+)\s+(<[^>]+>)\s+(.*)\s*{delimiter_pattern}\s*$')
+
     for ln in n3_data.splitlines():
         ln = ln.strip()
-        if not ln or ln.startswith('#'): continue
+        if not ln or ln.startswith('#'):
+            continue
+        # Normalize line endings to ensure consistent parsing
+        if ln[-1] in delimiters:
+            ln = ln[:-1] + '.'
         m = pat.match(ln)
         if m:
             s, p, o = m.groups()
             triples.append((s, p, o))
             if s.startswith('<'):
                 subjects.append(s)
-        else:
+        elif log_skipped:
             logger.warning(f"Skipping malformed triple: {ln}")
-    if not triples: return "No valid triples found."
-    if not subjects: return "No URI subjects found."
+
+    if not triples:
+        return "No valid triples found."
+    if not subjects:
+        return "No URI subjects found."
+
     main = Counter(subjects).most_common(1)[0][0]
     subj_iri = main.strip('<>')
     main_lbl = get_label_from_uri(main)
     props, inc = defaultdict(set), set()
+
     for s, p, o in triples:
         lbl = get_label_from_uri(p).lower()
         o_clean = o.strip() if o else ""
@@ -166,13 +189,17 @@ def process_n3_simplified(n3_data: str) -> str:
             props[lbl].add(clean_value(o_clean))
         elif o_clean == main:
             inc.add((clean_value(s), lbl, main_lbl))
+
     out = [f"IRI: {subj_iri}", f"label: {next(iter(props.get('label', [])), main_lbl)}"]
     if props:
         out.append("\nOutgoing Relationships:")
-        for k in sorted(props): out.append(f"{k}: {', '.join(sorted(props[k]))}")
+        for k in sorted(props):
+            out.append(f"{k}: {', '.join(sorted(props[k]))}")
     if inc:
         out.append("\nIncoming Relationships:")
-        for s, p, o in sorted(inc): out.append(f"({s}, {p}, {o})")
+        for s, p, o in sorted(inc):
+            out.append(f"({s}, {p}, {o})")
+
     return '\n'.join(out)
 
 async def process_instance_worker(instance_iri: str, conn: aiosqlite.Connection):
