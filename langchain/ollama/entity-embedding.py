@@ -105,7 +105,7 @@ async def log_failed_iri(iri, error_message):
     try:
         async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
             await conn.execute(
-                "INSERT INTO failed_iris (iri, error_message) VALUES (?, ?)",
+                "INSERT INTO failed_iris_organisation (iri, error_message) VALUES (?, ?)",
                 (iri, error_message)
             )
             await conn.commit()
@@ -117,7 +117,7 @@ async def log_processed_iri(iri):
     try:
         async with aiosqlite.connect(SQLITE_DB_PATH) as conn:
             await conn.execute(
-                "INSERT OR IGNORE INTO processed_iris (iri) VALUES (?)",
+                "INSERT OR IGNORE INTO processed_iris_organisation (iri) VALUES (?)",
                 (iri,)
             )
             await conn.commit()
@@ -208,6 +208,9 @@ async def process_from_sqlite(batch_size=5, max_workers=5, max_retries=3, retry_
 
         # Update the last_seen_id to the last record in the current batch
         last_seen_id = batch_rows[-1]["id"]
+
+        # Save the last processed ID to the database after processing each batch
+        await save_last_processed_id_to_db(last_seen_id)
 
         # Log progress
         logger.info(f"Processed {count} records so far...")
