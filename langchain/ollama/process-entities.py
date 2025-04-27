@@ -120,15 +120,15 @@ def process_n3_with_rdflib(graph: Graph, instance_iri) -> str:
     for s, p, o in graph:
         s_label = get_label_from_uri(s)
         p_label = get_label_from_uri(p)
-        o_value = get_label_from_uri(o)
+        o_label = get_label_from_uri(o)
 
         if str(s) == instance_iri:
             if "homepage" in p_label or "website" in p_label:
                 props[p_label].append(str(o))
             else:
-                props[p_label].append(o_value)
+                props[p_label].append(o_label)
         else:
-            incoming.append((s_label, p_label, o_value))
+            incoming.append((s_label, p_label, o_label))
 
     description = []
     description.append(f"IRI: {instance_iri}")
