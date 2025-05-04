@@ -167,7 +167,6 @@ async def process_from_sqlite(batch_size=5, limit=None):
                 if not description or not iri:
                     logger.warning(f"Skipping row with IRI {iri}: missing 'iri' or 'description'")
                     continue
-
                 tasks.append(summarize_entity_async(description))
                 iri_descriptions.append((iri, description))
             except Exception as e:
@@ -249,8 +248,10 @@ async def process_from_sqlite_async(batch_size=1000, max_retries=3, retry_delay=
                 iri_descriptions.append((iri, description))
             except json.JSONDecodeError:
                 logger.warning(f"Invalid JSON in row with IRI {iri}, skipping.")
+                await log_failed_iri(iri, "Invalid JSON")
             except Exception as e:
                 logger.warning(f"Failed to prepare row with IRI {iri}: {e}")
+                await log_failed_iri(iri, str(e))
 
         summaries = await asyncio.gather(*tasks, return_exceptions=True)
 
