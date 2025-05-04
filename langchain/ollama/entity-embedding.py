@@ -30,7 +30,7 @@ DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 CONNECTION_STRING = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-COLLECTION_NAME = "dbpedia_docs_organisation_27-04-2025"
+COLLECTION_NAME = "dbpedia_docs_organisation_04-05-2025"
 
 # Local file and SQLite DB path setup
 OUTPUT_FILENAME_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "datasets", "cache")
