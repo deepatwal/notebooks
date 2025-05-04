@@ -178,6 +178,7 @@ async def process_from_sqlite(batch_size=5, limit=None):
         for (iri, description), summary in zip(iri_descriptions, summaries):
             if isinstance(summary, Exception) or summary is None:
                 logger.exception(f"Summarization failed for IRI {iri}: {summary}")
+                await log_failed_iri(iri, "Summarization failed")
                 continue
 
             full_text = f"{summary}\n\n{description}"
@@ -238,26 +239,18 @@ async def process_from_sqlite_async(batch_size=1000, max_retries=3, retry_delay=
         for row in batch_rows:
             iri = row["iri"]
             try:
-                data_json = json.loads(row["data"])
-                description = data_json.get("description", "")
-                if not description or not iri:
-                    logger.warning(f"Skipping row with IRI {iri}: missing 'iri' or 'description'")
-                    continue
-
+                description = row["data"]
                 tasks.append(summarize_entity_with_retries(description))
                 iri_descriptions.append((iri, description))
-            except json.JSONDecodeError:
-                logger.warning(f"Invalid JSON in row with IRI {iri}, skipping.")
-                await log_failed_iri(iri, "Invalid JSON")
             except Exception as e:
                 logger.warning(f"Failed to prepare row with IRI {iri}: {e}")
-                await log_failed_iri(iri, str(e))
 
         summaries = await asyncio.gather(*tasks, return_exceptions=True)
 
         for (iri, description), summary in zip(iri_descriptions, summaries):
             if isinstance(summary, Exception) or summary is None:
                 logger.exception(f"Summarization failed for IRI {iri}: {summary}")
+                await log_failed_iri(iri, "Summarization failed")
                 continue
 
             full_text = f"Summary: {summary}\n\nOriginal: {description}"
