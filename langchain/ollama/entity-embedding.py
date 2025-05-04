@@ -150,6 +150,7 @@ async def process_from_sqlite(batch_size=5, limit=None):
     last_seen_id = await load_last_processed_id_from_db()
 
     while True:
+        batch_start_time = time.time()  # Start timing for the batch
         batch_rows = await fetch_rows_from_sqlite_in_batches(batch_size=batch_size, last_seen_id=last_seen_id)
         if not batch_rows:
             break
@@ -199,6 +200,10 @@ async def process_from_sqlite(batch_size=5, limit=None):
 
         # Save the last processed ID to the database after processing each batch
         await save_last_processed_id_to_db(last_seen_id)
+
+        # Log batch processing time
+        batch_end_time = time.time()
+        logger.info(f"Batch processed in {batch_end_time - batch_start_time:.2f} seconds")
 
         # Log progress
         logger.info(f"Processed {count} records so far...")
