@@ -296,4 +296,4 @@ async def process_from_sqlite_async(batch_size=1000, max_retries=3, retry_delay=
             logger.info(f"Progress: {count}/{limit} records completed.")
 
 # Retain only the asynchronous function call
-asyncio.run(process_from_sqlite(batch_size=500, limit=None))
+asyncio.run(process_from_sqlite(batch_size=50, limit=None))
