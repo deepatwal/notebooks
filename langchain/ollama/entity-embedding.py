@@ -186,6 +186,9 @@ async def process_from_sqlite(batch_size=5, limit=None):
             batch_docs.append(doc)
             count += 1
 
+            # Log the processed IRI after successful summarization
+            await log_processed_iri(iri)
+
         if batch_docs:
             try:
                 await vectorstore.add_documents_async(batch_docs)  # Assuming vectorstore supports async
