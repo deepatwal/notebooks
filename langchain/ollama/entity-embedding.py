@@ -163,15 +163,13 @@ async def process_from_sqlite(batch_size=5, limit=None):
         for row in batch_rows:
             iri = row["iri"]
             try:
-                description = json.loads(row["data"])
+                description = row["data"]
                 if not description or not iri:
                     logger.warning(f"Skipping row with IRI {iri}: missing 'iri' or 'description'")
                     continue
 
                 tasks.append(summarize_entity_async(description))
                 iri_descriptions.append((iri, description))
-            except json.JSONDecodeError:
-                logger.warning(f"Invalid JSON in row with IRI {iri}, skipping.")
             except Exception as e:
                 logger.warning(f"Failed to prepare row with IRI {iri}: {e}")
 
