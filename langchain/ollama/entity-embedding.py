@@ -1,15 +1,12 @@
 import os
 import json
 import logging
-import sqlite3
 import psycopg
-from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import asyncio
 import aiosqlite
 
-from contextlib import closing
+from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_postgres.vectorstores import PGVector
 from langchain_core.documents import Document
