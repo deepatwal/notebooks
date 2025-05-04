@@ -78,7 +78,7 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray]]:
                     SELECT document, embedding
                     FROM public.langchain_pg_embedding
                     WHERE document IS NOT NULL
-                    AND collection_id = '76b3cdc3-08e6-465e-a807-31a87dc245fa'
+                    AND collection_id = '2326336a-363c-4d32-bafe-323da1ddb107'
                 """)
                 results = cur.fetchall()
     except Exception as e:
