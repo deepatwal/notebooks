@@ -30,7 +30,7 @@ DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 CONNECTION_STRING = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-COLLECTION_NAME = "dbpedia_docs_organisation_04-05-2025"
+COLLECTION_NAME = "dbpedia_docs_organisation_05-05-2025"
 
 # Local file and SQLite DB path setup
 OUTPUT_FILENAME_DIR = os.path.join("c:\\Users\\deepa\\data\\workspace\\notebooks", "datasets", "cache")
@@ -284,4 +284,4 @@ async def process_from_sqlite_async(batch_size=1000, max_retries=3, retry_delay=
             logger.info(f"Progress: {count}/{limit} records completed.")
 
 # Retain only the asynchronous function call
-asyncio.run(process_from_sqlite(batch_size=50, limit=None))
+asyncio.run(process_from_sqlite(batch_size=10, limit=None))
