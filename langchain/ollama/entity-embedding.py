@@ -44,8 +44,8 @@ try:
         connection=CONNECTION_STRING,
         embeddings=embedding_model,
         collection_name=COLLECTION_NAME,
-        use_jsonb=True,
-        pre_delete_collection=True
+        use_jsonb=True
+        # pre_delete_collection=True
     )
     logger.info("Connection to vectorstore successful.")
 except psycopg.OperationalError as e:
