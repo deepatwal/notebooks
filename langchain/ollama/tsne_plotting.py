@@ -2,15 +2,13 @@ import os
 import ast
 import logging
 from typing import Optional, Tuple, cast
-
 import numpy as np
 import pandas as pd
 import psycopg
-import umap
 import plotly.express as px
 from sklearn.preprocessing import normalize
-from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
+from sklearn.manifold import TSNE
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -79,7 +77,7 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray]]:
             with conn.cursor() as cur:
                 # Using TABLESAMPLE SYSTEM (10) to get approximately 10% of the data
                 # This is a major optimization for large datasets.
-                cur.execute("""
+                cur.execute(""" 
                     SELECT document, embedding
                     FROM public.langchain_pg_embedding
                     WHERE document IS NOT NULL
@@ -97,8 +95,6 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray]]:
         if emb is None:
             continue
         try:
-            # ast.literal_eval can be slow for many calls.
-            # Storing embeddings in a binary format in the DB would be faster.
             emb_list = ast.literal_eval(emb)
             if not isinstance(emb_list, list):
                 raise ValueError("Embedding is not a valid list.")
@@ -116,18 +112,16 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray]]:
 
     return labels, np.stack(embeddings)
 
-def plot_umap_3d(
+def plot_tsne_3d(
     embeddings: np.ndarray,
     labels: Optional[list[str]] = None,
-    n_neighbors: int = 15,
-    min_dist: float = 0.1,
-    metric: str = "euclidean",
-    densmap: bool = True, # Set to False for significant speedup
-    pca_components: int = 20 # Number of components for initial PCA reduction
+    n_clusters: int = 5,
+    perplexity: float = 30.0,
+    learning_rate: float = 200.0,
+    n_iter: int = 1000
 ) -> None:
     """
-    Applies PCA and UMAP for 3D reduction and plots the result.
-    Includes parameters for UMAP optimization.
+    Applies t-SNE for 3D reduction and plots the result.
     """
     if embeddings is None or len(embeddings) == 0:
         logging.error("No valid embeddings provided.")
@@ -139,47 +133,26 @@ def plot_umap_3d(
     logging.info("Normalizing embeddings to unit vectors...")
     embeddings = normalize(embeddings)
 
-    # Apply PCA to reduce dimensionality
-    logging.info(f"Applying PCA to reduce from {embeddings.shape[1]} dimensions to {pca_components}...")
+    # Apply t-SNE
+    logging.info(f"Applying t-SNE (perplexity={perplexity}, learning_rate={learning_rate}, n_iter={n_iter})...")
     try:
-        pca = PCA(n_components=pca_components, random_state=42)
-        embeddings = pca.fit_transform(embeddings)
-        logging.info(f"PCA explained variance ratio sum: {pca.explained_variance_ratio_.sum():.4f}")
+        tsne = TSNE(n_components=3, perplexity=perplexity, learning_rate=learning_rate, n_iter=n_iter, random_state=42)
+        embedding_3d = tsne.fit_transform(embeddings)
+        logging.info("t-SNE reduction complete.")
     except Exception as e:
-        logging.error(f"PCA failed: {e}")
-        return
-
-
-    # Apply UMAP
-    logging.info(f"Applying UMAP (n_components=3, n_neighbors={n_neighbors}, min_dist={min_dist}, metric='{metric}', densmap={densmap})...")
-    try:
-        reducer = umap.UMAP(
-            n_components=3,
-            n_neighbors=n_neighbors,
-            min_dist=min_dist,
-            metric=metric,
-            random_state=42,
-            n_jobs=-1,
-            densmap=densmap,
-            low_memory=True
-        )
-        embedding_3d = reducer.fit_transform(embeddings)
-        logging.info("UMAP reduction complete.")
-    except Exception as e:
-        logging.error(f"UMAP failed: {e}")
+        logging.error(f"t-SNE failed: {e}")
         return
 
     # Apply KMeans clustering
     logging.info("Applying KMeans clustering to embeddings...")
-    n_clusters = n_neighbors  # Set clusters to the number of neighbors
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-    cluster_labels = kmeans.fit_predict(embedding_3d)  # Use the 3D UMAP embeddings
+    cluster_labels = kmeans.fit_predict(embedding_3d)  # Use the 3D t-SNE embeddings
     logging.info(f"KMeans clustering complete. Number of clusters: {n_clusters}")
 
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
     # Save reduced embeddings
-    reduced_embeddings_path = os.path.join(OUTPUT_DIR, f"reduced_embeddings_n{n_neighbors}_{timestamp}.npy")
+    reduced_embeddings_path = os.path.join(OUTPUT_DIR, f"reduced_embeddings_tsne_{timestamp}.npy")
     np.save(reduced_embeddings_path, embedding_3d)
     logging.info(f"Reduced embeddings saved to {reduced_embeddings_path}")
 
@@ -198,22 +171,22 @@ def plot_umap_3d(
         y="y",
         z="z",
         color=cluster_labels,  # Color by cluster labels
-        title=f"3D UMAP Projection (n_neighbors={n_neighbors}, min_dist={min_dist}, metric='{metric}', densmap={densmap})"
+        title=f"3D t-SNE Projection (perplexity={perplexity}, learning_rate={learning_rate})"
     )
 
     fig.update_layout(
         scene=dict(
-            xaxis_title="UMAP Component 1",
-            yaxis_title="UMAP Component 2",
-            zaxis_title="UMAP Component 3"
+            xaxis_title="t-SNE Component 1",
+            yaxis_title="t-SNE Component 2",
+            zaxis_title="t-SNE Component 3"
         ),
         margin=dict(l=0, r=0, b=0, t=40),
     )
 
     # Save HTML plot
-    plot_path = os.path.join(OUTPUT_DIR, f"3d_umap_projection_n{n_neighbors}_m{min_dist}_{metric}{'_densmap' if densmap else ''}_{timestamp}.html")
+    plot_path = os.path.join(OUTPUT_DIR, f"3d_tsne_projection_{timestamp}.html")
     fig.write_html(plot_path, include_plotlyjs="cdn", full_html=True)
-    logging.info(f"3D UMAP plot saved at {plot_path}")
+    logging.info(f"3D t-SNE plot saved at {plot_path}")
 
     # fig.show() # Uncomment this line if you want the plot to open automatically
 
@@ -222,14 +195,13 @@ if __name__ == "__main__":
     labels, embeddings = fetch_and_process_entities()
     if embeddings is not None:
         logging.info(f"Fetched {len(embeddings)} embeddings.")
-        plot_umap_3d(
+        plot_tsne_3d(
             embeddings,
             labels=labels,
-            n_neighbors=15,
-            min_dist=0.1,
-            metric="euclidean",
-            densmap=False,
-            pca_components=50
+            n_clusters=5,
+            perplexity=30.0,
+            learning_rate=200.0,
+            n_iter=1000
         )
     else:
         logging.warning("No embeddings to visualize.")
