@@ -45,7 +45,6 @@ try:
         embeddings=embedding_model,
         collection_name=COLLECTION_NAME,
         use_jsonb=True
-        # pre_delete_collection=True
     )
     logger.info("Connection to vectorstore successful.")
 except psycopg.OperationalError as e:
@@ -144,13 +143,13 @@ async def load_last_processed_id_from_db():
         logger.error(f"Failed to load last processed ID from SQLite: {e}")
         return 0
 
-# Updated process_from_sqlite to use asyncio.run with summarize_entity_async
+# Updated process_from_sqlite to use to_thread for vectorstore insertion
 async def process_from_sqlite(batch_size=5, limit=None):
     count = 0
     last_seen_id = await load_last_processed_id_from_db()
 
     while True:
-        batch_start_time = time.time()  # Start timing for the batch
+        batch_start_time = time.time()
         batch_rows = await fetch_rows_from_sqlite_in_batches(batch_size=batch_size, last_seen_id=last_seen_id)
         if not batch_rows:
             break
@@ -191,97 +190,19 @@ async def process_from_sqlite(batch_size=5, limit=None):
 
         if batch_docs:
             try:
-                await vectorstore.add_documents_async(batch_docs)  # Assuming vectorstore supports async
+                await asyncio.to_thread(vectorstore.add_documents, batch_docs)
                 logger.info(f"Stored batch of {len(batch_docs)} embeddings.")
             except Exception as e:
                 logger.error(f"Failed to store batch: {e}")
 
-        # Update the last_seen_id to the last record in the current batch
         last_seen_id = batch_rows[-1]["id"]
-
-        # Save the last processed ID to the database after processing each batch
         await save_last_processed_id_to_db(last_seen_id)
 
-        # Log batch processing time
         batch_end_time = time.time()
         logger.info(f"Batch processed in {batch_end_time - batch_start_time:.2f} seconds")
-
-        # Log progress
         logger.info(f"Processed {count} records so far...")
         if limit:
             logger.info(f"Progress: {count}/{limit} records completed.")
 
-# Async process rows from SQLite DB
-async def process_from_sqlite_async(batch_size=1000, max_retries=3, retry_delay=5, limit=None):
-    count = 0
-    last_seen_id = 0
-    semaphore = asyncio.Semaphore(100)  # Limit concurrency to 100 tasks
-
-    async def summarize_entity_with_retries(description, retries=3, delay=2):
-        for attempt in range(retries):
-            try:
-                async with semaphore:
-                    return await summarize_entity_async(description)
-            except Exception as e:
-                logger.warning(f"Retry {attempt + 1} failed for summarization: {e}")
-                await asyncio.sleep(delay * (2 ** attempt))  # Exponential backoff
-        logger.error(f"Failed to summarize after {retries} retries.")
-        return None
-
-    while True:
-        batch_rows = await fetch_rows_from_sqlite_in_batches(batch_size=batch_size, last_seen_id=last_seen_id)
-        if not batch_rows:
-            break
-        if limit and count >= limit:
-            break
-
-        batch_docs = []
-        tasks = []
-        iri_descriptions = []
-
-        for row in batch_rows:
-            iri = row["iri"]
-            try:
-                description = row["data"]
-                tasks.append(summarize_entity_with_retries(description))
-                iri_descriptions.append((iri, description))
-            except Exception as e:
-                logger.warning(f"Failed to prepare row with IRI {iri}: {e}")
-
-        summaries = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for (iri, description), summary in zip(iri_descriptions, summaries):
-            if isinstance(summary, Exception) or summary is None:
-                logger.exception(f"Summarization failed for IRI {iri}: {summary}")
-                await log_failed_iri(iri, "Summarization failed")
-                continue
-
-            full_text = f"Summary: {summary}\n\nOriginal: {description}"
-            doc = Document(page_content=full_text, metadata={"_id": iri})
-            batch_docs.append(doc)
-            count += 1
-
-        if batch_docs:
-            success = False
-            for attempt in range(max_retries):
-                try:
-                    vectorstore.add_documents(batch_docs)
-                    logger.info(f"Stored batch of {len(batch_docs)} embeddings.")
-                    success = True
-                    break
-                except Exception as e:
-                    logger.warning(f"Attempt {attempt + 1} failed to store batch: {e}")
-                    await asyncio.sleep(retry_delay)
-            if not success:
-                logger.error("Failed to store batch after maximum retries.")
-
-        # Update the last_seen_id to the last record in the current batch
-        last_seen_id = batch_rows[-1]["id"]
-
-        # Log progress
-        logger.info(f"Processed {count} records so far...")
-        if limit:
-            logger.info(f"Progress: {count}/{limit} records completed.")
-
-# Retain only the asynchronous function call
+# Run the async process
 asyncio.run(process_from_sqlite(batch_size=10, limit=None))
