@@ -3,7 +3,6 @@ import ast
 import logging
 import re
 import numpy as np
-import pandas as pd
 import psycopg
 import umap
 
@@ -104,6 +103,7 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray], list[
                     FROM public.langchain_pg_embedding
                     WHERE document IS NOT NULL
                     AND collection_id = '72e5e3bb-7211-4197-a16e-44e4b0efb7d8'
+                    LIMIT 10000
                 """)
                 results = cur.fetchall()
     except Exception as e:
@@ -152,7 +152,7 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray], list[
 
     return labels, np.stack(embeddings), types
 
-def assign_cluster_names(cluster_labels, types, labels) -> dict:
+def assign_cluster_names(cluster_labels, types) -> dict:
     cluster_names = {}
     
     for cluster_id in set(cluster_labels):
@@ -208,7 +208,7 @@ def plot_umap_3d(
     logging.info(f"Silhouette Score: {silhouette_avg:.3f}")
 
     # Assign names to clusters based on types and labels
-    cluster_names = assign_cluster_names(cluster_labels, types, labels)
+    cluster_names = assign_cluster_names(cluster_labels, types)
 
     # Create a 3D scatter plot with Plotly Graph Objects
     fig = go.Figure()
@@ -222,7 +222,7 @@ def plot_umap_3d(
             size=8,
             color=cluster_labels,  # Color by cluster label
             colorscale='Viridis',  # Colorscale for better visualization
-            opacity=0.8
+            opacity=0.7
         ),
         text=labels,  # Hover text with labels
         hoverinfo='text'
