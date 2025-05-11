@@ -103,7 +103,6 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray], list[
                     FROM public.langchain_pg_embedding
                     WHERE document IS NOT NULL
                     AND collection_id = '72e5e3bb-7211-4197-a16e-44e4b0efb7d8'
-                    LIMIT 10000
                 """)
                 results = cur.fetchall()
     except Exception as e:
@@ -275,7 +274,7 @@ if __name__ == "__main__":
             embeddings,
             labels=labels,
             types=types,
-            n_neighbors=15,
+            n_neighbors=35,
             min_dist=0.1,
             metric="euclidean",
             pca_components=50
