@@ -1,12 +1,12 @@
 import os
 import ast
 import logging
-from typing import Optional, Tuple, cast
-
+import re
 import numpy as np
 import pandas as pd
 import psycopg
 import umap
+from typing import Optional, Tuple, cast
 import plotly.express as px
 from sklearn.preprocessing import normalize
 from sklearn.decomposition import PCA
@@ -42,6 +42,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)  # Ensure the output directory exists
 # PostgreSQL connection string
 CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+# Define a set of known generic types to exclude
+GENERIC_TYPES = {"Agent", "SocialPerson", "Thing", "Organization", "Group", "Organisation", "Band"}
+
 # Helper functions
 
 def extract_entity_label(entity: dict) -> str:
@@ -62,7 +65,9 @@ def parse_document(document: str) -> dict:
                 parsed_data["IRI"] = line.split("IRI:")[1].strip()
             elif "name:" in line:
                 parsed_data["name"] = line.split("name:")[1].strip()
-            if "IRI" in parsed_data and "name" in parsed_data:
+            elif "type:" in line:  # Extract 'type' information
+                parsed_data["type"] = line.split("type:")[1].strip()
+            if "IRI" in parsed_data and "name" in parsed_data and "type" in parsed_data:
                 break
         return parsed_data
     except Exception as e:
@@ -70,16 +75,14 @@ def parse_document(document: str) -> dict:
         logging.error(f"Problematic document: {document}")
         return {}
 
-def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray]]:
+def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray], list[list[str]]]:
     """
     Fetches a sample of embeddings and documents from the database.
     """
     try:
         with psycopg.connect(CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
-                # Using TABLESAMPLE SYSTEM (10) to get approximately 10% of the data
-                # This is a major optimization for large datasets.
-                cur.execute("""
+                cur.execute(""" 
                     SELECT document, embedding
                     FROM public.langchain_pg_embedding
                     WHERE document IS NOT NULL
@@ -88,17 +91,16 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray]]:
                 results = cur.fetchall()
     except Exception as e:
         logging.error(f"Database connection failed: {e}")
-        return [], None
+        return [], None, []
 
     labels = []
     embeddings = []
+    types = [] 
 
     for document, emb in results:
         if emb is None:
             continue
         try:
-            # ast.literal_eval can be slow for many calls.
-            # Storing embeddings in a binary format in the DB would be faster.
             emb_list = ast.literal_eval(emb)
             if not isinstance(emb_list, list):
                 raise ValueError("Embedding is not a valid list.")
@@ -106,99 +108,97 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray]]:
             entity = parse_document(document)
             label = extract_entity_label(entity)
             labels.append(label)
+
+            # Get the types from the entity, which is a comma-separated string
+            entity_types = entity.get("type", "").split(",")
+            entity_types = {et.strip() for et in entity_types}  # Unique types using a set
+
+            # Use regex to remove types that start with "Q" followed by numeric digits (e.g., Q215380)
+            entity_types = {et for et in entity_types if not re.match(r"^Q\d+$", et)}
+
+            # Filter out generic types
+            specific_types = [et for et in entity_types if et not in GENERIC_TYPES]
+
+            if specific_types:
+                types.append(specific_types)
+
         except Exception as e:
             logging.error(f"Error processing document or embedding: {e}")
             logging.error(f"Problematic document: {document}")
 
     if not embeddings:
         logging.error("No valid embeddings were fetched.")
-        return [], None
+        return [], None, []
 
-    return labels, np.stack(embeddings)
+    return labels, np.stack(embeddings), types
+
+def assign_cluster_types(cluster_labels, types):
+    """
+    Assign multiple types to each cluster based on the types in that cluster.
+    """
+    cluster_types = {}
+    for cluster_id in set(cluster_labels):
+        # Get all types assigned to the current cluster
+        cluster_types_in_group = [types[i] for i in range(len(types)) if cluster_labels[i] == cluster_id]
+        
+        # Flatten the list of types
+        flat_types = [item for sublist in cluster_types_in_group for item in sublist]
+        
+        # Get all unique types for the current cluster
+        unique_types = set(flat_types)
+        
+        # Assign the unique types to the cluster
+        cluster_types[cluster_id] = unique_types
+
+    return cluster_types
 
 def plot_umap_3d(
     embeddings: np.ndarray,
     labels: Optional[list[str]] = None,
+    types: Optional[list[list[str]]] = None,
     n_neighbors: int = 15,
     min_dist: float = 0.1,
     metric: str = "euclidean",
-    densmap: bool = True, # Set to False for significant speedup
-    pca_components: int = 20 # Number of components for initial PCA reduction
+    densmap: bool = True,
+    pca_components: int = 20
 ) -> None:
-    """
-    Applies PCA and UMAP for 3D reduction and plots the result.
-    Includes parameters for UMAP optimization.
-    """
     if embeddings is None or len(embeddings) == 0:
         logging.error("No valid embeddings provided.")
         return
 
     logging.info(f"Processing {len(embeddings)} embeddings with dimension {embeddings.shape[1]}")
 
-    # Normalize embeddings to unit vectors
-    logging.info("Normalizing embeddings to unit vectors...")
     embeddings = normalize(embeddings)
 
-    # Apply PCA to reduce dimensionality
     logging.info(f"Applying PCA to reduce from {embeddings.shape[1]} dimensions to {pca_components}...")
-    try:
-        pca = PCA(n_components=pca_components, random_state=42)
-        embeddings = pca.fit_transform(embeddings)
-        logging.info(f"PCA explained variance ratio sum: {pca.explained_variance_ratio_.sum():.4f}")
-    except Exception as e:
-        logging.error(f"PCA failed: {e}")
-        return
+    pca = PCA(n_components=pca_components, random_state=42)
+    embeddings = pca.fit_transform(embeddings)
 
+    logging.info("Applying UMAP...")
+    reducer = umap.UMAP(n_components=3, n_neighbors=n_neighbors, min_dist=min_dist, metric=metric, random_state=42)
+    embedding_3d = reducer.fit_transform(embeddings)
 
-    # Apply UMAP
-    logging.info(f"Applying UMAP (n_components=3, n_neighbors={n_neighbors}, min_dist={min_dist}, metric='{metric}', densmap={densmap})...")
-    try:
-        reducer = umap.UMAP(
-            n_components=3,
-            n_neighbors=n_neighbors,
-            min_dist=min_dist,
-            metric=metric,
-            random_state=42,
-            n_jobs=-1,
-            densmap=densmap,
-            low_memory=True
-        )
-        embedding_3d = reducer.fit_transform(embeddings)
-        logging.info("UMAP reduction complete.")
-    except Exception as e:
-        logging.error(f"UMAP failed: {e}")
-        return
-
-    # Apply KMeans clustering
-    logging.info("Applying KMeans clustering to embeddings...")
-    n_clusters = n_neighbors  # Set clusters to the number of neighbors
+    logging.info("Applying KMeans clustering...")
+    n_clusters = n_neighbors
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-    cluster_labels = kmeans.fit_predict(embedding_3d)  # Use the 3D UMAP embeddings
-    logging.info(f"KMeans clustering complete. Number of clusters: {n_clusters}")
+    cluster_labels = kmeans.fit_predict(embedding_3d)
 
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-
-    # Save reduced embeddings
-    reduced_embeddings_path = os.path.join(OUTPUT_DIR, f"reduced_embeddings_n{n_neighbors}_{timestamp}.npy")
-    np.save(reduced_embeddings_path, embedding_3d)
-    logging.info(f"Reduced embeddings saved to {reduced_embeddings_path}")
+    # Assign cluster types (optional, but now we'll not use them for the color coding)
+    cluster_types = assign_cluster_types(cluster_labels, types)
 
     # Create DataFrame
     df = pd.DataFrame(embedding_3d, columns=["x", "y", "z"])
     df['index'] = range(len(df))
 
-    # Truncate labels to reduce plot size and improve readability
-    if labels:
-        df['label'] = [label[:50] for label in labels]  # Increased truncation length slightly
+    # Add cluster labels for color coding
+    df['cluster_label'] = [f"Cluster {cluster}" for cluster in cluster_labels]
 
-    # 3D scatter plot with coloring based on cluster labels
+    # 3D scatter plot
     fig = px.scatter_3d(
         df,
-        x="x",
-        y="y",
-        z="z",
-        color=cluster_labels,  # Color by cluster labels
-        title=f"3D UMAP Projection (n_neighbors={n_neighbors}, min_dist={min_dist}, metric='{metric}', densmap={densmap})"
+        x="x", y="y", z="z",
+        color="cluster_label",
+        title="3D UMAP with Clusters"
     )
 
     fig.update_layout(
@@ -210,21 +210,21 @@ def plot_umap_3d(
         margin=dict(l=0, r=0, b=0, t=40),
     )
 
-    # Save HTML plot
-    plot_path = os.path.join(OUTPUT_DIR, f"3d_umap_projection_n{n_neighbors}_m{min_dist}_{metric}{'_densmap' if densmap else ''}_{timestamp}.html")
+    # Timestamp for saving the plot
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    plot_path = os.path.join(OUTPUT_DIR, f"3d_umap_clusters_{timestamp}.html")
     fig.write_html(plot_path, include_plotlyjs="cdn", full_html=True)
     logging.info(f"3D UMAP plot saved at {plot_path}")
 
-    # fig.show() # Uncomment this line if you want the plot to open automatically
-
 # Main runner
 if __name__ == "__main__":
-    labels, embeddings = fetch_and_process_entities()
+    labels, embeddings, types = fetch_and_process_entities()
     if embeddings is not None:
         logging.info(f"Fetched {len(embeddings)} embeddings.")
         plot_umap_3d(
             embeddings,
             labels=labels,
+            types=types,
             n_neighbors=15,
             min_dist=0.1,
             metric="euclidean",
