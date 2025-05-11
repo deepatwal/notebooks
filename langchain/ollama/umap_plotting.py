@@ -48,7 +48,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)  # Ensure the output directory exists
 CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # Define a set of known generic types to exclude
-GENERIC_TYPES = {"Agent", "SocialPerson", "Thing", "Organization", "Group", "Organisation", "Band"}
+GENERIC_TYPES = {"Agent", "SocialPerson", "Thing", "Organization", "Group", "Organisation", "Band", "Company", "Corporation", "Person", "Place", "Location", "Event", "Concept", "Object"}
 
 # Helper functions
 def extract_entity_label(entity: dict) -> str:
@@ -69,9 +69,25 @@ def parse_document(document: str) -> dict:
                 parsed_data["IRI"] = line.split("IRI:")[1].strip()
             elif "name:" in line:
                 parsed_data["name"] = line.split("name:")[1].strip()
-            elif "type:" in line:  # Extract 'type' information
+            elif "type:" in line: 
                 parsed_data["type"] = line.split("type:")[1].strip()
             if "IRI" in parsed_data and "name" in parsed_data and "type" in parsed_data:
+                break
+        return parsed_data
+    except Exception as e:
+        logging.error(f"Error parsing document: {e}")
+        logging.error(f"Problematic document: {document}")
+        return {}
+    
+
+def parse_document_for_property(document: str, prop: str) -> dict:
+    parsed_data = {}
+    try:
+        lines = document.split("\n")
+        for line in lines:
+            if f"{prop}:" in line:
+                parsed_data[prop] = line.split(f"{prop}:")[1].strip()
+            if prop in parsed_data:
                 break
         return parsed_data
     except Exception as e:
@@ -119,6 +135,12 @@ def fetch_and_process_entities() -> Tuple[list[str], Optional[np.ndarray], list[
 
             if specific_types:
                 types.append(specific_types)
+            
+            else:
+                # Fallback to generic types if no specific types are found use industry
+                specific_props = parse_document_for_property(document, "industry")
+                specific_props = specific_props.get("industry", "Unknown").split(",")
+                types.append([sp.strip() for sp in specific_props])
 
         except Exception as e:
             logging.error(f"Error processing document or embedding: {e}")
@@ -134,20 +156,18 @@ def assign_cluster_names(cluster_labels, types, labels) -> dict:
     cluster_names = {}
     
     for cluster_id in set(cluster_labels):
-        # Collect types and labels for the given cluster
+        # Collect types for the given cluster
         cluster_types_in_group = [types[i] for i in range(len(types)) if cluster_labels[i] == cluster_id]
-        cluster_labels_in_group = [labels[i] for i in range(len(labels)) if cluster_labels[i] == cluster_id]
         
         # Flatten types and count the most common ones
         flat_types = [item for sublist in cluster_types_in_group for item in sublist]
         type_counts = Counter(flat_types)
+
+        # Get the most common type
+        most_common_type = type_counts.most_common(1)[0][0] if type_counts else cluster_id
         
-        # Get the most common type and label
-        most_common_type = type_counts.most_common(1)[0][0] if type_counts else "Unknown"
-        most_common_label = Counter(cluster_labels_in_group).most_common(1)[0][0] if cluster_labels_in_group else "Unknown"
-        
-        # Combine the most common type and label for a meaningful name
-        cluster_names[cluster_id] = f"{most_common_type} ({most_common_label})"
+        # Combine the most common type as a label for a meaningful name
+        cluster_names[cluster_id] = f"{most_common_type}"
     
     return cluster_names
 
