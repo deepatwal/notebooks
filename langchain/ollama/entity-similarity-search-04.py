@@ -3,7 +3,7 @@ import logging
 import psycopg
 from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings, ChatOllama
-from langchain_postgres.vectorstores import PGVector
+from langchain_postgres.vectorstores import PGVector, DistanceStrategy
 from langchain_core.prompts import ChatPromptTemplate
 
 # Load environment variables
@@ -37,6 +37,7 @@ try:
         connection=CONNECTION_STRING,
         embeddings=embedding_model,
         collection_name=COLLECTION_NAME,
+        distance_strategy=DistanceStrategy.COSINE,
         use_jsonb=True
     )
     logger.info("Connection to vectorstore successful.")
@@ -56,11 +57,11 @@ chat_prompt = ChatPromptTemplate.from_messages([
 # WHERE collection_id = '72e5e3bb-7211-4197-a16e-44e4b0efb7d8'
 #   AND cmetadata @> '{"_id": "http://dbpedia.org/resource/Scania_AB"}'
 # LIMIT 10;
-query = "Tell me about Company Scania AB based out of Sweden."
+query = "Companies in Automotive and Manufacturing industry"
 
 similar_docs = vectorstore.similarity_search_with_score(
     query=query,
-    k=5
+    k=10
 )
 
 
@@ -87,7 +88,15 @@ similar_docs = vectorstore.similarity_search_with_score(
 #     print(f"Document: {doc.page_content}")
 #     print("\n")
 
+
 # print the results
+
+# Set your threshold
+# MIN_SCORE = 0.7
+
+# # Filter results manually
+# filtered_results = [(doc, score) for doc, score in similar_docs if score >= MIN_SCORE]
+
 print("Query:", query)
 print("Similar documents found:\n")
 for doc, score in similar_docs:
