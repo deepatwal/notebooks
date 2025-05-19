@@ -4,7 +4,6 @@ import psycopg
 from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_postgres.vectorstores import PGVector, DistanceStrategy
-from langchain_core.prompts import ChatPromptTemplate
 
 # Load environment variables
 load_dotenv()
@@ -17,21 +16,20 @@ logging.basicConfig(level=logging.INFO)
 chat_ollama = ChatOllama(model="llama3.2:3b")
 embedding_model = OllamaEmbeddings(model="bge-m3:567m")
 
-# Setup DB connection
+# DB connection setup
 DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT")
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME")
+
 if COLLECTION_NAME is None:
     raise ValueError("COLLECTION_NAME environment variable is not set.")
-COLLECTION_ID = os.getenv("COLLECTION_ID")
-TABLE_NAME = os.getenv("TABLE_NAME")
 
 CONNECTION_STRING = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-logger.info(f"Connecting to PGVector collection '{COLLECTION_NAME}'...")
+# Connect to vector store
 try:
     vectorstore = PGVector(
         connection=CONNECTION_STRING,
@@ -40,66 +38,50 @@ try:
         distance_strategy=DistanceStrategy.COSINE,
         use_jsonb=True
     )
-    logger.info("Connection to vectorstore successful.")
+    logger.info("Connected to PGVector successfully.")
 except psycopg.OperationalError as e:
     logger.exception(f"Database connection error: {e}")
 except Exception as e:
     logger.exception(f"Unexpected error during PGVector connection: {e}")
 
-# --- Similarity Search ---
-chat_prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful assistant."),
-    ("user", "Find similar entities to the following prompt: {prompt}"),
-])
+# -------------------------------
+# 🔍 STEP 1: Natural Language Query
+# -------------------------------
+user_question = "Tell me about Volvo?"
 
-# SELECT document
-# FROM public.langchain_pg_embedding
-# WHERE collection_id = '72e5e3bb-7211-4197-a16e-44e4b0efb7d8'
-#   AND cmetadata @> '{"_id": "http://dbpedia.org/resource/Scania_AB"}'
-# LIMIT 10;
-query = "Companies in Automotive and Manufacturing industry"
+# Embed the question and get top match
+query_embedding = embedding_model.embed_query(user_question)
+top_doc_result = vectorstore.similarity_search_with_score_by_vector(
+    embedding=query_embedding,
+    k=1  # Get best match first
+)
 
-similar_docs = vectorstore.similarity_search_with_score(
-    query=query,
+if not top_doc_result:
+    print("No matching document found.")
+    exit()
+
+top_doc, top_score = top_doc_result[0]
+print("✅ Most Relevant Document:\n")
+print("--" * 50)
+print(f"Document: {top_doc.page_content}\nScore: {top_score}")
+print("--" * 50)
+
+# -------------------------------
+# 🤝 STEP 2: Recommend Similar Entities
+# -------------------------------
+print("\n🔁 Recommending Similar Companies...\n")
+
+reference_embedding = embedding_model.embed_query(top_doc.page_content)
+
+similar_docs = vectorstore.similarity_search_with_score_by_vector(
+    embedding=reference_embedding,
     k=10
 )
 
+filtered_docs = [(doc, score) for doc, score in similar_docs if doc.page_content != top_doc.page_content]
 
-# # 2. Use a Query Embedding Directly (More Control)
-# query_embedding = embedding_model.embed_query(query)
-
-# similar_docs = vectorstore.similarity_search_with_score_by_vector(
-#     embedding=query_embedding,
-#     k=5
-# )
-
-# 3. Switch to max_marginal_relevance_search
-# similar_docs = vectorstore.max_marginal_relevance_search(
-#     query=query,
-#     k=10,
-#     fetch_k=20,  # retrieves more candidates before reranking
-#     lambda_mult=0.5  # balance between relevance and diversity
-# )
-# # print the results
-# print("Query:", query)
-# print("Similar documents found:\n")
-# for doc in similar_docs:
-#     print("--" * 50)
-#     print(f"Document: {doc.page_content}")
-#     print("\n")
-
-
-# print the results
-
-# Set your threshold
-# MIN_SCORE = 0.7
-
-# # Filter results manually
-# filtered_results = [(doc, score) for doc, score in similar_docs if score >= MIN_SCORE]
-
-print("Query:", query)
-print("Similar documents found:\n")
-for doc, score in similar_docs:
+print("🏭 Similar Companies:\n")
+for doc, score in filtered_docs:
     print("--" * 50)
-    print(f"Document: {doc.page_content}, \nScore: {score}")
-    print("\n")
+    print(f"Document: {doc.page_content}\nScore: {score}")
+    print()
