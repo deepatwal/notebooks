@@ -1,0 +1,278 @@
+Question: 
+    Who is the director of the film Inception ?
+SPARQL Query:
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX text: <http://jena.apache.org/text#>
+
+    SELECT ?director
+    FROM <https://www.sw.org/dpbedia/ontology>
+    FROM <https://www.sw.org/dpbedia/data>
+    WHERE {
+        {
+            (?film ?score) text:query ( "label:Inception" ) .
+        }
+        UNION 
+        {
+            (?film ?score) text:query ( "foaf_name:Inception" ) .
+        }
+        UNION 
+        {
+            (?film ?score) text:query ( "skos_prefLabel:Inception" ) .
+        }
+        
+        ?film rdf:type dbo:Film .
+        ?film dbo:director ?director .
+    }
+    ORDER BY DESC(?score)
+
+Question:
+    Who is the founder of the company Nvidia ?
+SPARQL Query:
+    PREFIX text: <http://jena.apache.org/text#>
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+    SELECT DISTINCT ?founder 
+    FROM <https://www.sw.org/dpbedia/ontology>
+    FROM <https://www.sw.org/dpbedia/data>
+    WHERE {
+        {
+            (?company ?score) text:query ( "label:Nvidia" ).
+        }
+        UNION
+        {
+            (?company ?score) text:query ( "foaf_name:Nvidia" ).
+        }
+        UNION
+        {
+            (?company ?score) text:query ( "skos_prefLabel:Nvidia" ).
+        }
+
+        ?company rdf:type dbo:Company .
+        ?company dbo:foundedBy ?founder .
+    }
+    ORDER BY DESC(?score)
+
+Question:
+    Which classes are equivalent to the concept of Book ?
+SPARQL Query:
+    PREFIX text: <http://jena.apache.org/text#>
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX owl: <http://www.w3.org/2002/07/owl#>
+
+    SELECT ?book_equivalent_class
+    FROM <https://www.sw.org/dpbedia/ontology>
+    WHERE {
+        {
+            (?book ?score) text:query ( "label:Book" ) .
+        }
+        UNION
+        {
+            (?book ?score) text:query ( "foaf_name:Book" ) .
+        }
+        UNION
+        {
+            (?book ?score) text:query ( "skos_prefLabel:Book" ) .
+        }
+        
+        ?book owl:equivalentClass ?book_equivalent_class .
+    }
+    ORDER BY DESC(?score)
+
+Question:
+    What book is the most referenced in DBpedia?
+SPARQL Query:
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+    SELECT ?book
+    WHERE {
+        ?book rdf:type dbo:Book .
+        ?incoming ?p ?book .
+    }
+    GROUP BY ?book
+    ORDER BY DESC(COUNT(?incoming))
+    LIMIT 1
+
+Question:
+    Which book is the most referenced in DBpedia, and who is its publisher?
+SPARQL Query:
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+    SELECT ?book ?publisher
+    WHERE {
+        ?book rdf:type dbo:Book .
+        ?incoming ?p ?book .
+        OPTIONAL {
+            ?book dbo:publisher ?publisher .
+        }
+    }
+    GROUP BY ?book ?publisher
+    ORDER BY DESC(COUNT(?incoming))
+    LIMIT 1
+
+Question:
+    What are the author, publisher, and genre details of the book ‘Harry Potter and the Philosopher’s Stone’ in DBpedia
+SPARQL Query:
+    PREFIX text: <http://jena.apache.org/text#>
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+    SELECT DISTINCT ?book ?author ?publisher ?genre 
+    WHERE {
+        {
+            (?book ?score) text:query ( 'label:"Harry Potter and the Philosopher\'s Stone"' ) .
+        }
+        UNION
+        {
+            (?book ?score) text:query ( 'foaf_name:"Harry Potter and the Philosopher\'s Stone"' ) .
+        }
+        UNION
+        {
+            (?book ?score) text:query ( 'skos_prefLabel:"Harry Potter and the Philosopher\'s Stone"' ) .
+        }
+
+        ?book rdf:type dbo:Book .
+        OPTIONAL { ?book dbo:author ?author }
+        OPTIONAL { ?book dbo:publisher ?publisher }
+        OPTIONAL { ?book dbo:literaryGenre ?genre }
+    }
+    ORDER BY DESC(?score)
+    LIMIT 1
+
+Question:
+    What is the most popular book in DBpedia, other than The Federalist Papers, and who wrote it, published it, and what genre does it belong to?
+SPARQL Query:
+    PREFIX text: <http://jena.apache.org/text#>
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX owl: <http://www.w3.org/2002/07/owl#>
+
+    SELECT ?book ?author ?publisher ?genre 
+    WHERE {
+    {
+        SELECT ?book (COUNT(?incoming) AS ?popularity) 
+        WHERE {
+        {
+            SELECT DISTINCT ?book_ 
+            WHERE {
+            {
+                (?book_ ?score) text:query ( 'label:"The Federalist Papers"' ) .
+            }
+            UNION
+            {
+                (?book_ ?score) text:query ( 'foaf_name:"The Federalist Papers"' ) .
+            }
+            UNION
+            {
+                (?book_ ?score) text:query ( 'skos_prefLabel:"The Federalist Papers"' ) .
+            }
+            ?book_ rdf:type dbo:Book .
+            }
+            ORDER BY DESC(?score)
+            LIMIT 1
+        }
+        ?book rdf:type dbo:Book .
+        ?incoming ?p ?book .
+        FILTER (?book != ?book_)
+        }
+        GROUP BY ?book
+        ORDER BY DESC(?popularity)
+        LIMIT 1
+    }
+    OPTIONAL { ?book dbo:author ?author }
+    OPTIONAL { ?book dbo:publisher ?publisher }
+    OPTIONAL { ?book dbo:literaryGenre ?genre }
+    }
+
+
+Question:
+    What facts do we have about the person 'J. K. Rowling' ?
+SPARQL Query:
+    PREFIX text: <http://jena.apache.org/text#>
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX owl: <http://www.w3.org/2002/07/owl#>
+
+    SELECT DISTINCT ?person ?attribute ?value
+    WHERE {
+        {
+            (?person ?score) text:query ( 'label:"J. K. Rowling"' ) . 
+        }
+        UNION
+        {
+            (?person ?score) text:query ( 'foaf_name:"J. K. Rowling"' ) . 
+        }
+        UNION
+        {
+            (?person ?score) text:query ( 'skos_prefLabel:"J. K. Rowling"' ) .
+        }
+
+        ?person rdf:type dbo:Person .
+        ?person ?attribute ?value .
+    }
+    ORDER BY DESC(?score)
+
+Question:
+    What are the parent categories of ‘Television Show’ ?
+SPARQL Query:
+    PREFIX text: <http://jena.apache.org/text#>
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX owl: <http://www.w3.org/2002/07/owl#>
+
+    SELECT DISTINCT ?superclass
+    WHERE {
+        {
+            (?entity ?score) text:query ( 'label:"Television Show"' ) . 
+        }
+        UNION
+        {
+            (?entity ?score) text:query ( 'foaf_name:"Television Show"' ) .  
+        }
+        UNION
+        {
+            (?entity ?score) text:query ( 'skos_prefLabel:"Television Show"' ) .
+        }
+        ?entity rdf:type owl:Class .
+        ?entity rdfs:subClassOf+ ?superclass .
+        }
+    ORDER BY DESC(?score)
+
+Question:
+    What are the subcategories of ‘Television Show’?
+SPARQL Query:
+    PREFIX text: <http://jena.apache.org/text#>
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX owl: <http://www.w3.org/2002/07/owl#>
+
+    SELECT DISTINCT ?subclass
+    WHERE {
+        {
+            (?entity ?score) text:query ( 'label:"Television Show"' ) . 
+        }
+        UNION
+        {
+            (?entity ?score) text:query ( 'foaf_name:"Television Show"' ) .  
+        }
+        UNION
+        {
+            (?entity ?score) text:query ( 'skos_prefLabel:"Television Show"' ) .
+        }
+        ?entity rdf:type owl:Class .
+        ?subclass rdfs:subClassOf+ ?entity .
+    }
+    ORDER BY DESC(?score)
+

@@ -12,7 +12,8 @@ env-langchain-ollama
 env-ollama-langchain-embedding
 env-ollama-langchain-embedding-pca
 env-nlp
-datasets
+datasets/**
+!datasets/few-shot-example/few_shot_example.txt
 datasets-backup
 env-ml-bootcamp
 env-ollama-langchain
