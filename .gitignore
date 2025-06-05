@@ -11,6 +11,7 @@ env-pytorch
 env-langchain-ollama
 env-ollama-langchain-embedding
 env-ollama-langchain-embedding-pca
+env-computer-vision-pytorch
 env-nlp
 datasets/**
 !datasets/few-shot-example/few_shot_example.txt
