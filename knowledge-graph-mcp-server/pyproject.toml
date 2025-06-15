@@ -10,5 +10,6 @@ dependencies = [
     "SPARQLWrapper",
     "langchain",
     "langchain[google-genai]",
-    "python-dotenv"
+    "python-dotenv",
+    "rdflib"
 ]
