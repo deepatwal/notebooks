@@ -8,12 +8,21 @@ create a folder and run the command the following command in the folder:
 
 To Register Your Server in Claude Desktop App:
     uv run main.py
-    
-    this will create a new virtual environment in the current folder
-        uv run --active mcp install main.py
 
-To Run the Server Locally (for testing/debugging):
-    uv run --active mcp run main.py
+Add following to claude_desktop_config.json:
+{
+    "mcpServers": {
+        "KnowledgeGraphMCP": {
+        "command": "C:\\users\\deepa\\.local\\bin\\uv.EXE",
+        "args": [
+            "--directory",
+            "C:\\Users\\deepa\\data\\workspace\\notebooks\\knowledge-graph-mcp-server",
+            "run",
+            "main.py"
+        ]
+        }
+    }
+    }
 
 To Launch with the Dev Inspector UI:
     uv run --active mcp dev main.py
