@@ -80,7 +80,7 @@ def run_sparql_query(query: str) -> list[dict]:
         logging.error(f"SPARQL query failed: {e}", exc_info=True)
         return [{"error": str(e)}]
 
-# @mcp.tool()
+@mcp.tool()
 def ask_kg(question: str) -> list[dict]:
     try:
         raw_llm_output = chain.invoke({"question": question})
