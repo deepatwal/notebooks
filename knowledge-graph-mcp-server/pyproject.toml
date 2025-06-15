@@ -1,11 +1,14 @@
 [project]
 name = "knowledge-graph-mcp-server"
 version = "0.1.0"
-description = "Knowledge Graph MCP Server"
+description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "httpx>=0.28.1",
-    "mcp[cli]>=1.9.4",
-    "sparqlwrapper",
+    "httpx",
+    "mcp[cli]",
+    "SPARQLWrapper",
+    "langchain",
+    "langchain[google-genai]",
+    "python-dotenv"
 ]

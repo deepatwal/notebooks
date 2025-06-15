@@ -27,3 +27,4 @@ langchain/ollama/cache.db
 langchain/ollama/cache-copy.db
 note.txt
 terminal-mcp-server/__pycache__
+env-mcp-server

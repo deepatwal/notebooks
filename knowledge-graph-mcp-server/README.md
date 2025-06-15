@@ -1,7 +1,9 @@
 
 create a python virtual env:
-    uv venv env-mcp-server
-    uv add "mcp[cli]" --active
+    uv venv env-kg-mcp-server
+   
+uv pip install:
+    uv pip install httpx
 
 create a folder and run the command the following command in the folder:
     uv init
