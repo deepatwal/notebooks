@@ -7,7 +7,10 @@ create a folder and run the command the following command in the folder:
     uv init
 
 To Register Your Server in Claude Desktop App:
-    uv run --active mcp install main.py
+    uv run main.py
+    
+    this will create a new virtual environment in the current folder
+        uv run --active mcp install main.py
 
 To Run the Server Locally (for testing/debugging):
     uv run --active mcp run main.py

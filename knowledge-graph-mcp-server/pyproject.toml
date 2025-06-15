@@ -5,6 +5,7 @@ description = "Knowledge Graph MCP Server"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx>=0.28.1",
     "mcp[cli]>=1.9.4",
-    "SPARQLWrapper",
+    "sparqlwrapper",
 ]
