@@ -18,8 +18,11 @@ datasets/**
 datasets-backup
 env-ml-bootcamp
 env-ollama-langchain
+env-mcp-server
 note.txt
 # langchain/.env
 langchain/ollama/cache.db
 langchain/ollama/cache-copy.db
 note.txt
+terminal-mcp-server/__pycache__
+knowledge-graph-mcp-server/__pycache__
