@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import json
 
 from mcp.server.fastmcp import FastMCP
 from SPARQLWrapper import SPARQLWrapper, JSON
@@ -19,7 +18,7 @@ try:
     if not google_api_key:
         raise ValueError("GOOGLE_API_KEY environment variable is not set.")
 except ImportError:
-    logging.error("dotenv package not found. Please install it to load environment variables.")
+    logging.error("Failed to load environment variables. Make sure you have a .env file with GOOGLE_API_KEY set.")
     exit(1)
 
 # MCP and SPARQL setup
@@ -96,18 +95,20 @@ def ask_kg(question: str) -> list[dict]:
         return [{"error": str(e)}]
 
 
-# # Run MCP server
-# logging.info("Launching MCP with Gemini 2.5 Pro SPARQL interface...")
-# try:
-#     mcp.run()
-# except KeyboardInterrupt:
-#     logging.info("MCP stopped by user.")
-# except Exception as e:
-#     logging.error(f"Unhandled error in MCP: {e}", exc_info=True)
+# Run MCP server
+logging.info("Launching MCP...")
+try:
+    mcp.run()
+except KeyboardInterrupt:
+    logging.info("MCP stopped by user.")
+except Exception as e:
+    logging.error(f"error in MCP: {e}", exc_info=True)
 
 
-if __name__ == "__main__":
-    results = ask_kg("What is the capital of France?")
-    
-    print("\n--- FINAL RESULTS ---")
-    print(json.dumps(results, indent=2))
+# for debugging purposes, you can uncomment the following lines to run the function directly
+# if __name__ == "__main__":
+#     import json
+#     results = ask_kg("What is the capital of France?")
+#
+#     print("\n--- FINAL RESULTS ---")
+#     print(json.dumps(results, indent=2))
