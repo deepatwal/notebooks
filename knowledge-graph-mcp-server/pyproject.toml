@@ -9,7 +9,7 @@ dependencies = [
     "mcp[cli]",
     "SPARQLWrapper",
     "langchain",
-    "langchain[google-genai]",
+    "langchain-ollama",
     "python-dotenv",
     "rdflib"
 ]

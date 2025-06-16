@@ -4,11 +4,11 @@ import re
 
 from mcp.server.fastmcp import FastMCP
 from SPARQLWrapper import SPARQLWrapper, JSON
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
+from langchain_ollama import ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
-from rdflib import Graph, RDF, RDFS, OWL
+from rdflib import Graph
 
 # ------------------------------------------------------------------------------
 # Logging setup
@@ -25,7 +25,8 @@ try:
     if not google_api_key:
         raise ValueError("GOOGLE_API_KEY environment variable is not set.")
 except ImportError:
-    logger.error("Failed to load environment variables. Make sure you have a .env file with GOOGLE_API_KEY set.")
+    logger.error(
+        "Failed to load environment variables. Make sure you have a .env file with GOOGLE_API_KEY set.")
     exit(1)
 
 # ------------------------------------------------------------------------------
@@ -42,41 +43,43 @@ def load_ontology_summary(path: str) -> str:
     g.parse(path, format="xml")
     return g.serialize(format="nt")
 
+
 ontology_summary = load_ontology_summary(ONTOLOGY_FILE)
 
 # ------------------------------------------------------------------------------
 # Gemini model initialization
 # ------------------------------------------------------------------------------
-model = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash",
-    google_api_key=google_api_key,
-    temperature=0
-)
+chat_ollama = ChatOllama(model="gemma3:12b", temperature=0)
+chat_ollama
 
 # ------------------------------------------------------------------------------
 # Prompt template with ontology support
 # ------------------------------------------------------------------------------
-prompt_template = """
-You are an expert SPARQL assistant.
+sparql_prompt = ChatPromptTemplate.from_messages([(
+    "system", """You are an expert SPARQL assistant.
 
-Convert the following natural language question into a SPARQL query.
+    Convert the following natural language question into a SPARQL query.
 
-Use the provided ontology to understand the structure and relationships of the data.
-Ontology: {ontology}
+    Use the provided ontology to understand the core elements such as:
+    - Classes
+    - Object Properties
+    - Data Properties
+    - Annotation Properties
+    - Relationships between classes
+    - Domain and range of properties
+    - Hierarchy of classes
+    - Inverse relationships
+    - Cardinality constraints
+    - Any other relevant information that can help in constructing the SPARQL query.
+    - The ontology is provided in the form of a summary.
+    Ontology: {ontology}
 
-Convert the question into a SPARQL query that can be executed against the SPARQL endpoint.
-Question: {question}
+    Convert the natural language question into a SPARQL query that can be executed against the provided SPARQL endpoint.
+    Question: {question}
 
-SPARQL:
-"""
-
-prompt = PromptTemplate(
-    input_variables=["question", "ontology"],
-    template=prompt_template
-)
-
-# Chain
-chain = prompt | model | StrOutputParser()
+    SPARQL:
+    """
+)])
 
 # ------------------------------------------------------------------------------
 # Extract SPARQL from LLM output
@@ -103,6 +106,7 @@ def run_sparql_query(query: str) -> list[dict]:
         logger.error(f"SPARQL query failed: {e}", exc_info=True)
         return [{"error": str(e)}]
 
+
 # ------------------------------------------------------------------------------
 # FastMCP tool: ask_kg
 # ------------------------------------------------------------------------------
@@ -112,10 +116,15 @@ mcp = FastMCP("KnowledgeGraphMCP")
 def ask_kg(question: str) -> list[dict]:
     try:
         logger.info(f"Received question: {question}")
-        raw_llm_output = chain.invoke({"question": question, "ontology": ontology_summary})
-        logger.info(f"LLM Output:\n{raw_llm_output}")
 
-        sparql_query = extract_sparql_from_markdown(raw_llm_output)
+        formatted_messages = sparql_prompt.format_messages(
+            question=question,
+            ontology=ontology_summary
+        )
+
+        logger.info(f"LLM Output:\n{formatted_messages}")
+        response = chat_ollama.invoke(formatted_messages)
+        sparql_query = extract_sparql_from_markdown(response.content)
         logger.info(f"Extracted SPARQL:\n{sparql_query}")
 
         return run_sparql_query(sparql_query)
