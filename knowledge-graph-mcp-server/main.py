@@ -149,7 +149,7 @@ def run_sparql_query(query: str) -> list[dict]:
 # ------------------------------------------------------------------------------
 mcp = FastMCP("KnowledgeGraphMCP")
 
-# @mcp.tool()
+@mcp.tool()
 def ask_kg(question: str) -> list[dict]:
     try:
         logger.info(f"Received question: {question}")
@@ -175,21 +175,21 @@ def ask_kg(question: str) -> list[dict]:
 # ------------------------------------------------------------------------------
 # Run MCP Server
 # ------------------------------------------------------------------------------
-# logger.info("Starting KnowledgeGraphMCP...")
-# try:
-#     mcp.run()
-# except KeyboardInterrupt:
-#     logger.info("MCP stopped by user.")
-# except Exception as e:
-#     logger.error(f"Unexpected error in MCP: {e}", exc_info=True)
+logger.info("Starting KnowledgeGraphMCP...")
+try:
+    mcp.run()
+except KeyboardInterrupt:
+    logger.info("MCP stopped by user.")
+except Exception as e:
+    logger.error(f"Unexpected error in MCP: {e}", exc_info=True)
 
 # ------------------------------------------------------------------------------
 # Run MCP Server in debug mode
 # ------------------------------------------------------------------------------
-if __name__ == "__main__":
-    import json
-    # results = ask_kg("What is the capital of France?")
-    results = ask_kg("What is the country code and capital of France?")
+# if __name__ == "__main__":
+#     import json
+#     # results = ask_kg("What is the capital of France?")
+#     results = ask_kg("What is the country code and capital of France?")
 
-    print("\n--- FINAL RESULTS ---")
-    print(json.dumps(results, indent=2))
+#     print("\n--- FINAL RESULTS ---")
+#     print(json.dumps(results, indent=2))
