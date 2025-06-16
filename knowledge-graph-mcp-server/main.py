@@ -49,7 +49,8 @@ ontology_summary = load_ontology_summary(ONTOLOGY_FILE)
 # ------------------------------------------------------------------------------
 # Gemini model initialization
 # ------------------------------------------------------------------------------
-chat_ollama = ChatOllama(model="gemma3:12b", temperature=0)
+# chat_ollama = ChatOllama(model="gemma3:12b", temperature=0)
+chat_ollama = ChatOllama(model="deepseek-r1:14b", temperature=0)
 chat_ollama
 
 # ------------------------------------------------------------------------------
@@ -73,6 +74,15 @@ sparql_prompt = ChatPromptTemplate.from_messages([(
     - Any other relevant information that can help in constructing the SPARQL query.
     - The ontology is provided in the form of a summary.
     Ontology: {ontology}
+
+    Guidelines:
+    - Only use IRIs that are explicitly present in the provided ontology.
+    - Do not guess or hallucinate IRIs, property names, or class names.
+    - If multiple IRIs could match a term (e.g., `dbo:capital` vs `dbp:capital`), choose the one **actually defined** in the ontology and aligned with class/property relationships.
+    - Always include `PREFIX` declarations for every prefix you use in the query.
+    - If a prefix is not declared in the ontology, use full IRIs.
+    - Prefer ontology-defined object properties over instance-level data properties.
+    - Use standard SPARQL syntax. Include filters (e.g., `FILTER`, `regex`) if appropriate.
 
     Convert the natural language question into a SPARQL query that can be executed against the provided SPARQL endpoint.
     Question: {question}
@@ -122,10 +132,10 @@ def ask_kg(question: str) -> list[dict]:
             ontology=ontology_summary
         )
 
-        logger.info(f"LLM Output:\n{formatted_messages}")
+        # logger.info(f"formatted_messages:\n{formatted_messages}")
         response = chat_ollama.invoke(formatted_messages)
         sparql_query = extract_sparql_from_markdown(response.content)
-        logger.info(f"Extracted SPARQL:\n{sparql_query}")
+        logger.info(f"Extracted SPARQL:\n\n{sparql_query}")
 
         return run_sparql_query(sparql_query)
     except Exception as e:
