@@ -47,49 +47,79 @@ def load_ontology_summary(path: str) -> str:
 ontology_summary = load_ontology_summary(ONTOLOGY_FILE)
 
 # ------------------------------------------------------------------------------
+# Load Few-Shot Examples
+# ------------------------------------------------------------------------------
+few_shot_examples = None
+few_shot_example_file = r"C:\Users\deepa\data\workspace\notebooks\datasets\few-shot-example\few_shot_example.txt"
+with open(few_shot_example_file, "r", encoding="utf-8") as f:
+    few_shot_examples = f.read()
+
+# ------------------------------------------------------------------------------
 # Gemini model initialization
 # ------------------------------------------------------------------------------
 # chat_ollama = ChatOllama(model="gemma3:12b", temperature=0)
-chat_ollama = ChatOllama(model="deepseek-r1:14b", temperature=0)
+chat_ollama = ChatOllama(model="gemma3:12b", temperature=0)
 chat_ollama
 
 # ------------------------------------------------------------------------------
 # Prompt template with ontology support
 # ------------------------------------------------------------------------------
-sparql_prompt = ChatPromptTemplate.from_messages([(
-    "system", """You are an expert SPARQL assistant.
+sparql_prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are a SPARQL query generator.
 
-    Convert the following natural language question into a SPARQL query.
+You will use the following named graphs in the SPARQL query:
+- Ontology Graph: <{ontology_graph}>
+- Data Graph: <{data_graph}>
 
-    Use the provided ontology to understand the core elements such as:
-    - Classes
-    - Object Properties
-    - Data Properties
-    - Annotation Properties
-    - Relationships between classes
-    - Domain and range of properties
-    - Hierarchy of classes
-    - Inverse relationships
-    - Cardinality constraints
-    - Any other relevant information that can help in constructing the SPARQL query.
-    - The ontology is provided in the form of a summary.
-    Ontology: {ontology}
+Given the Ontology:
+{ontology}
 
-    Guidelines:
-    - Only use IRIs that are explicitly present in the provided ontology.
-    - Do not guess or hallucinate IRIs, property names, or class names.
-    - If multiple IRIs could match a term (e.g., `dbo:capital` vs `dbp:capital`), choose the one **actually defined** in the ontology and aligned with class/property relationships.
-    - Always include `PREFIX` declarations for every prefix you use in the query.
-    - If a prefix is not declared in the ontology, use full IRIs.
-    - Prefer ontology-defined object properties over instance-level data properties.
-    - Use standard SPARQL syntax. Include filters (e.g., `FILTER`, `regex`) if appropriate.
+Understand the core elements such as:
+- Classes
+- Object Properties
+- Data Properties
+- Annotation Properties
+- Relationships between classes
+- The complete structure of the Ontology
 
-    Convert the natural language question into a SPARQL query that can be executed against the provided SPARQL endpoint.
-    Question: {question}
+IMPORTANT:
+- Always use **all constructs** from the ontology namespace `http://dbpedia.org/ontology/`, including Classes, Object Properties, Data Properties, and Annotation Properties when generating queries.
+- For individuals or instance data, always use resources from the namespace `http://dbpedia.org/resource/`.
+- Use the following standard PREFIX declarations at the start of every query and refer to these prefixes consistently:
 
-    SPARQL:
-    """
-)])
+  PREFIX owl: <http://www.w3.org/2002/07/owl#>  
+  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>  
+  PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>  
+
+  PREFIX dbo: <http://dbpedia.org/ontology/>  
+  PREFIX dbr: <http://dbpedia.org/resource/>  
+  PREFIX foaf: <http://xmlns.com/foaf/0.1/>  
+  PREFIX skos: <http://www.w3.org/2004/02/skos/core#>  
+  PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>  
+  PREFIX text: <http://jena.apache.org/text#>
+
+Strict requirements:
+- You must generate SPARQL queries **exclusively using classes, properties, and individuals defined in the provided ontology**.
+- Do NOT invent or use any terms or URIs that do not appear in the ontology content above.
+- If a concept or property is not present in the ontology, do NOT attempt to query or guess its URI.
+- Always reference ontology terms with the dbo: prefix and individuals with the dbr: prefix.
+- If the user's question cannot be answered solely based on the ontology, generate a safe query that returns no results using only valid ontology terms.
+
+Your tasks:
+1. Summarize what domain the ontology covers.
+2. Suggest the types of questions users can ask based on it.
+3. Based on the user's question below, generate a valid SPARQL query.
+4. Ensure the query strictly conforms to the ontology’s structure and namespace usage.
+5. Use the `FROM` clause with the provided named graphs.
+6. Output **only the SPARQL query**, unless explicitly asked otherwise.
+
+Here are some examples of questions and their SPARQL equivalents (follow these examples closely):
+{examples}
+
+The user’s question is:
+{question}
+""")
+])
 
 # ------------------------------------------------------------------------------
 # Extract SPARQL from LLM output
@@ -127,9 +157,17 @@ def ask_kg(question: str) -> list[dict]:
     try:
         logger.info(f"Received question: {question}")
 
+        # formatted_messages = sparql_prompt.format_messages(
+        #     question=question,
+        #     ontology=ontology_summary
+        # )
+
         formatted_messages = sparql_prompt.format_messages(
-            question=question,
-            ontology=ontology_summary
+            ontology=ontology_summary,
+            examples=few_shot_examples,
+            ontology_graph="https://www.sw.org/dbpedia/ontology",
+            data_graph="https://www.sw.org/dbpedia/data",
+            question=question
         )
 
         # logger.info(f"formatted_messages:\n{formatted_messages}")
@@ -159,7 +197,8 @@ def ask_kg(question: str) -> list[dict]:
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
     import json
-    results = ask_kg("What is the capital of France?")
+    # results = ask_kg("What is the capital of France?")
+    results = ask_kg("What is the country code of France?")
 
     print("\n--- FINAL RESULTS ---")
     print(json.dumps(results, indent=2))

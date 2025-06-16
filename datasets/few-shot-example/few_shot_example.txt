@@ -6,7 +6,7 @@ SPARQL Query:
     PREFIX dbo: <http://dbpedia.org/ontology/>
     PREFIX text: <http://jena.apache.org/text#>
 
-    SELECT ?director
+    SELECT DISTINCT ?director
     FROM <https://www.sw.org/dpbedia/ontology>
     FROM <https://www.sw.org/dpbedia/data>
     WHERE {
@@ -65,7 +65,7 @@ SPARQL Query:
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
     PREFIX owl: <http://www.w3.org/2002/07/owl#>
 
-    SELECT ?book_equivalent_class
+    SELECT DISTINCT ?book_equivalent_class
     FROM <https://www.sw.org/dpbedia/ontology>
     WHERE {
         {
@@ -90,7 +90,7 @@ SPARQL Query:
     PREFIX dbo: <http://dbpedia.org/ontology/>
     PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 
-    SELECT ?book
+    SELECT DISTINCT ?book
     WHERE {
         ?book rdf:type dbo:Book .
         ?incoming ?p ?book .
@@ -105,7 +105,7 @@ SPARQL Query:
     PREFIX dbo: <http://dbpedia.org/ontology/>
     PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 
-    SELECT ?book ?publisher
+    SELECT DISTINCT ?book ?publisher
     WHERE {
         ?book rdf:type dbo:Book .
         ?incoming ?p ?book .
@@ -156,7 +156,7 @@ SPARQL Query:
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
     PREFIX owl: <http://www.w3.org/2002/07/owl#>
 
-    SELECT ?book ?author ?publisher ?genre 
+    SELECT DISTINCT ?book ?author ?publisher ?genre 
     WHERE {
     {
         SELECT ?book (COUNT(?incoming) AS ?popularity) 
