@@ -6,7 +6,6 @@ from mcp.server.fastmcp import FastMCP
 from SPARQLWrapper import SPARQLWrapper, JSON
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
 from rdflib import Graph
 
@@ -83,14 +82,12 @@ Understand the core elements such as:
 - The complete structure of the Ontology
 
 IMPORTANT:
-- Always use **all constructs** from the ontology namespace `http://dbpedia.org/ontology/`, including Classes, Object Properties, Data Properties, and Annotation Properties when generating queries.
+- Always use all constructs from the ontology namespace `http://dbpedia.org/ontology/`, including Classes, Object Properties, Data Properties, and Annotation Properties when generating queries.
 - For individuals or instance data, always use resources from the namespace `http://dbpedia.org/resource/`.
 - Use the following standard PREFIX declarations at the start of every query and refer to these prefixes consistently:
-
   PREFIX owl: <http://www.w3.org/2002/07/owl#>  
   PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>  
   PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>  
-
   PREFIX dbo: <http://dbpedia.org/ontology/>  
   PREFIX dbr: <http://dbpedia.org/resource/>  
   PREFIX foaf: <http://xmlns.com/foaf/0.1/>  
@@ -99,20 +96,20 @@ IMPORTANT:
   PREFIX text: <http://jena.apache.org/text#>
 
 Strict requirements:
-- You must generate SPARQL queries **exclusively using classes, properties, and individuals defined in the provided ontology**.
+- You must generate SPARQL queries exclusively using classes, properties, and individuals defined in the provided ontology.
 - Do NOT invent or use any terms or URIs that do not appear in the ontology content above.
-- If a concept or property is not present in the ontology, do NOT attempt to query or guess its URI.
+- Do NOT use FILTER, REGEX, or STR functions for label matching instead use full-text search with `text:query` to locate URI or IRI.
+- If a concept or property is not present in the ontology, DO NOT attempt to query or guess its URI or IRI.
 - Always reference ontology terms with the dbo: prefix and individuals with the dbr: prefix.
-- If the user's question cannot be answered solely based on the ontology, generate a safe query that returns no results using only valid ontology terms.
+- Every SPARQL query **must** include the `FROM <{ontology_graph}>` and `FROM <{data_graph}>` clauses to indicate the graphs being queried.
+- User's question must be answered solely based on the ontology, generate a SPARQL query using only valid ontology terms.
 
 Your tasks:
-1. Summarize what domain the ontology covers.
-2. Suggest the types of questions users can ask based on it.
-3. Based on the user's question below, generate a valid SPARQL query.
-4. Ensure the query strictly conforms to the ontology’s structure and namespace usage.
-5. Use the `FROM` clause with the provided named graphs.
-6. Output **only the SPARQL query**, unless explicitly asked otherwise.
-
+- Understand what the provided the ontology.
+- Based on the user's question below, generate a valid SPARQL query.
+- Ensure the query strictly conforms to the ontology’s structure and namespace usage.
+- Output only the SPARQL query.
+     
 Here are some examples of questions and their SPARQL equivalents (follow these examples closely):
 {examples}
 
@@ -157,11 +154,6 @@ def ask_kg(question: str) -> list[dict]:
     try:
         logger.info(f"Received question: {question}")
 
-        # formatted_messages = sparql_prompt.format_messages(
-        #     question=question,
-        #     ontology=ontology_summary
-        # )
-
         formatted_messages = sparql_prompt.format_messages(
             ontology=ontology_summary,
             examples=few_shot_examples,
@@ -170,7 +162,6 @@ def ask_kg(question: str) -> list[dict]:
             question=question
         )
 
-        # logger.info(f"formatted_messages:\n{formatted_messages}")
         response = chat_ollama.invoke(formatted_messages)
         sparql_query = extract_sparql_from_markdown(response.content)
         logger.info(f"Extracted SPARQL:\n\n{sparql_query}")
@@ -198,7 +189,7 @@ def ask_kg(question: str) -> list[dict]:
 if __name__ == "__main__":
     import json
     # results = ask_kg("What is the capital of France?")
-    results = ask_kg("What is the country code of France?")
+    results = ask_kg("What is the country code and capital of France?")
 
     print("\n--- FINAL RESULTS ---")
     print(json.dumps(results, indent=2))
