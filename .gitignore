@@ -29,3 +29,4 @@ note.txt
 terminal-mcp-server/__pycache__
 env-mcp-server
 env-kg-mcp-server
+env-ollama-langchain-v10
