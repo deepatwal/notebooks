@@ -9,9 +9,9 @@ version: 1.0.0
 schema: v1
 
 models:
-  - name: ollama qwen2.5-coder 14b
+  - name: ollama qwen2.5 coder 7b
     provider: ollama
-    model: ollama/qwen2.5-coder:14b
+    model: qwen2.5-coder:7b
     apiBase: http://localhost:11434
     capabilities:
       - tool_use
@@ -47,8 +47,7 @@ context:
   - provider: terminal
   - provider: open
     params:
-      onlyPinned: true
-  - provider: clipboard
+      onlyPinned: false
   - provider: tree
   - provider: problems
   - provider: debugger
